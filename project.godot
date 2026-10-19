@@ -1,0 +1,30 @@
+; Engine configuration file.
+config_version=5
+
+[application]
+config/name="Sequence: Killer Shadow"
+config/description="First-person stealth horror. Solo or 2-4 player co-op."
+run/main_scene="res://scenes/main_menu.tscn"
+config/features=PackedStringArray("4.3", "Forward Plus")
+config/icon="res://icon.svg"
+
+[audio]
+driver/enable_input=true
+
+[autoload]
+Game="*res://scripts/game.gd"
+Mic="*res://scripts/mic_listener.gd"
+Net="*res://scripts/network_manager.gd"
+
+[display]
+window/size/viewport_width=1280
+window/size/viewport_height=720
+window/stretch/mode="canvas_items"
+
+[layer_names]
+3d_physics/layer_1="world"
+3d_physics/layer_2="player"
+3d_physics/layer_3="monster"
+
+[rendering]
+renderer/rendering_method.mobile="gl_compatibility"
