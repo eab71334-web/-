@@ -66,3 +66,6 @@ git push -u origin main
 - `.github/workflows/ios.yml` → **unsigned IPA** (artifact `SequenceKillerShadow-ipa`); sideload with AltStore/Sideloadly or sign it yourself
 - Run from the repo's **Actions** tab (Run workflow) or on every push to `main`.
 - Phones: touch controls are built in (left = joystick, right = look, buttons E / RUN / C / Z / F).
+
+## Look & feel
+Procedural monster (`monster_rig.gd`), player arms/flashlight (`viewmodel.gd`), humanoid for co-op teammates (`human_rig.gd`), generated horror audio (`proc_audio.gd`: drone, heartbeat, breathing, footsteps, sting), flickering lights, vignette/grain/red fear pulse shader.
