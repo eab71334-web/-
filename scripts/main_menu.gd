@@ -5,6 +5,8 @@ var name_edit: LineEdit
 var ip_edit: LineEdit
 var mic_check: CheckBox
 var key_edit: LineEdit
+var url_edit: LineEdit
+var model_edit: LineEdit
 var status: Label
 var start_btn: Button
 var games_box: VBoxContainer
@@ -46,6 +48,14 @@ func _ready() -> void:
 	key_edit.placeholder_text = "مفتاح Claude API (اختياري)"
 	key_edit.text = Game.ai_key
 	left.add_child(key_edit)
+	url_edit = LineEdit.new()
+	url_edit.placeholder_text = "خادم ذكاء محلي مجاني (Ollama) مثل http://192.168.1.5:11434"
+	url_edit.text = Game.ai_url.replace("/v1/chat/completions", "") if Game.ai_url != Game.AI_URL_DEFAULT else ""
+	left.add_child(url_edit)
+	model_edit = LineEdit.new()
+	model_edit.placeholder_text = "اسم النموذج على الخادم"
+	model_edit.text = Game.ai_model
+	left.add_child(model_edit)
 	var note := _label(left, "بدون مفتاح يعمل الذكاء الداخلي (بدون إنترنت). مع المفتاح: اسمك وملخص اللعب يُرسلان إلى Anthropic، والصوت لا يُرسل أبداً.", 13)
 	note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_button(left, "لعب فردي", _on_solo)
@@ -84,6 +94,10 @@ func _apply() -> void:
 	Game.player_name = n if n != "" else "Player"
 	Game.use_mic = mic_check.button_pressed
 	Game.ai_key = key_edit.text.strip_edges()
+	var u := url_edit.text.strip_edges().rstrip("/")
+	Game.ai_url = Game.AI_URL_DEFAULT if u == "" else (u if u.contains("/v1/") else u + "/v1/chat/completions")
+	var mdl := model_edit.text.strip_edges()
+	Game.ai_model = mdl if mdl != "" else "qwen2.5:3b"
 	Game.save_settings()
 
 

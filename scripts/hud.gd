@@ -30,6 +30,9 @@ var restart_btn: Button
 var _sub_t := 0.0
 var fx_mat: ShaderMaterial
 var dbg: Label
+var chat_btn: Button
+var chat_panel: PanelContainer
+var chat_edit: LineEdit
 
 
 func _ready() -> void:
@@ -48,6 +51,34 @@ func _ready() -> void:
 	fx_mat.shader = sh
 	fx.material = fx_mat
 	root.add_child(fx)
+
+	chat_btn = Button.new()
+	chat_btn.text = "تكلّم (T)"
+	chat_btn.offset_left = 16
+	chat_btn.offset_top = 64
+	chat_btn.offset_right = 150
+	chat_btn.offset_bottom = 108
+	chat_btn.pressed.connect(_toggle_chat)
+	root.add_child(chat_btn)
+	chat_panel = PanelContainer.new()
+	chat_panel.anchor_left = 0.2
+	chat_panel.anchor_right = 0.8
+	chat_panel.anchor_top = 0.4
+	chat_panel.anchor_bottom = 0.4
+	chat_panel.offset_bottom = 60
+	chat_panel.visible = false
+	var hb := HBoxContainer.new()
+	chat_panel.add_child(hb)
+	chat_edit = LineEdit.new()
+	chat_edit.placeholder_text = "قل شيئاً للظل… (اقترب منه أولاً)"
+	chat_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	chat_edit.text_submitted.connect(func(_t): _send_chat())
+	hb.add_child(chat_edit)
+	var sb := Button.new()
+	sb.text = "إرسال"
+	sb.pressed.connect(_send_chat)
+	hb.add_child(sb)
+	root.add_child(chat_panel)
 
 	_mk(root, 0.5, -24, 28).text = "·"
 	prompt = _mk(root, 0.8, 0, 22)
@@ -181,3 +212,30 @@ func _process(delta: float) -> void:
 	else:
 		prompt.text = ""
 	noise_bar.value = clampf(lp.noise_level, 0.0, 1.0) * 100.0
+
+
+func _toggle_chat() -> void:
+	chat_panel.visible = not chat_panel.visible
+	Game.typing = chat_panel.visible
+	if chat_panel.visible:
+		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+		chat_edit.grab_focus()
+	elif not Game.touch_mode:
+		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+
+
+func _send_chat() -> void:
+	var t := chat_edit.text.strip_edges()
+	chat_edit.text = ""
+	if t != "":
+		Game.say_to_monster(t.left(120))
+	chat_panel.visible = false
+	Game.typing = false
+	if not Game.touch_mode:
+		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+
+
+func _unhandled_input(event: InputEvent) -> void:
+	if event.is_action_pressed("talk") and not chat_edit.has_focus():
+		_toggle_chat()
+		get_viewport().set_input_as_handled()

@@ -20,6 +20,8 @@ var phase := 0.0
 var _prev_sin := 0.0
 var _twitch_t := 0.0
 var _twitch := Vector3.ZERO
+var style := "walk"        # walk | stalk | crawl | limp (chosen by the AI each leg)
+var speak_until := 0.0
 
 
 func _pivot(parent: Node3D, pos: Vector3) -> Node3D:
@@ -122,6 +124,10 @@ func _ready() -> void:
 		rags.append(sk)
 
 
+func speak_for(sec: float) -> void:
+	speak_until = Time.get_ticks_msec() / 1000.0 + sec
+
+
 func animate(delta: float, speed: float, mood: int, t: float) -> void:
 	if spine == null:
 		return
@@ -130,6 +136,8 @@ func animate(delta: float, speed: float, mood: int, t: float) -> void:
 	var stare := mood == 3
 	var confront := mood == 5
 	var kill := mood == 6
+	var talk := mood == 7
+	var st := style if (mood == 0 or mood == 1 or mood == 4) else "walk"
 	var amp := clampf(speed / 3.0, 0.0, 1.6)
 	if speed > 0.15:
 		phase += delta * (3.0 + speed * 1.5)
@@ -141,9 +149,15 @@ func animate(delta: float, speed: float, mood: int, t: float) -> void:
 		reach = 0.5
 	elif stare:
 		reach = 0.15
+	elif talk:
+		reach = 0.35
+	elif st == "crawl":
+		reach = 1.25
+	elif st == "stalk":
+		reach = 0.45
 	for i in 2:
 		var side := -1.0 if i == 0 else 1.0
-		hips[i].rotation.x = lerpf(hips[i].rotation.x, sw * side * 0.65 * amp, k)
+		hips[i].rotation.x = lerpf(hips[i].rotation.x, sw * side * 0.65 * amp * (0.3 if (st == "limp" and i == 0) else 1.0), k)
 		knees[i].rotation.x = lerpf(knees[i].rotation.x, -maxf(0.0, sw * side) * 0.8 * amp, k)
 		shoulders[i].rotation.x = lerpf(shoulders[i].rotation.x, reach - sw * side * 0.35 * amp + sin(t * 0.9 + i) * 0.04, k)
 		shoulders[i].rotation.z = lerpf(shoulders[i].rotation.z, side * 0.1, k)
@@ -158,9 +172,15 @@ func animate(delta: float, speed: float, mood: int, t: float) -> void:
 		lean = -0.95
 	elif kill:
 		lean = -0.6
+	elif talk:
+		lean = -0.5
+	elif st == "crawl":
+		lean = -1.25
+	elif st == "stalk":
+		lean = -0.8
 	spine.rotation.x = lerpf(spine.rotation.x, lean, k * 0.6)
 	spine.scale.y = 1.0 + sin(t * 2.2) * 0.012
-	position.y = absf(sw) * 0.05 * amp
+	position.y = absf(sw) * 0.05 * amp - (0.25 if st == "crawl" else 0.0)
 
 	_twitch_t -= delta
 	if _twitch_t <= 0.0:
@@ -173,6 +193,8 @@ func animate(delta: float, speed: float, mood: int, t: float) -> void:
 		h = Vector3(0.3, sin(t * 28.0) * 0.1, sin(t * 19.0) * 0.12)
 	elif confront:
 		h = Vector3(0.2 + sin(t * 0.6) * 0.2, sin(t * 0.5) * 0.5, 0.25)
+	elif talk:
+		h = Vector3(0.3 + sin(t * 1.5) * 0.1, sin(t * 0.8) * 0.3, 0.35)
 	head.rotation = head.rotation.lerp(h, minf(delta * (14.0 if chase else 5.0), 1.0))
 
 	var jo := 0.08 + sin(t * 1.3) * 0.04
@@ -184,6 +206,10 @@ func animate(delta: float, speed: float, mood: int, t: float) -> void:
 		jo = 0.55
 	elif stare:
 		jo = 0.3
+	elif talk:
+		jo = 0.25
+	if t < speak_until:
+		jo = maxf(jo, 0.12 + absf(sin(t * 13.0)) * 0.35)
 	jaw.rotation.x = lerpf(jaw.rotation.x, -jo * 0.8, k)
 
 	var hot := chase or stare or confront
@@ -194,6 +220,6 @@ func animate(delta: float, speed: float, mood: int, t: float) -> void:
 		rags[i].rotation.x = sin(t * 1.7 + i) * 0.08 + amp * 0.3
 		rags[i].rotation.z = sin(t * 1.3 + i * 2.0) * 0.05
 
-	if amp > 0.25 and signf(sw) != signf(_prev_sin):
+	if amp > 0.25 and st != "stalk" and signf(sw) != signf(_prev_sin):
 		footstep.emit()
 	_prev_sin = sw

@@ -4,6 +4,8 @@ extends Node3D
 var info: Dictionary
 var door: Node
 var heart: AudioStreamPlayer
+var drone: AudioStreamPlayer
+var _was_quiet := false
 
 
 func _ready() -> void:
@@ -63,7 +65,7 @@ func _add_environment() -> void:
 
 
 func _add_audio() -> void:
-	var drone := AudioStreamPlayer.new()
+	drone = AudioStreamPlayer.new()
 	drone.stream = ProcAudio.get_sound("drone")
 	drone.volume_db = -12.0
 	add_child(drone)
@@ -76,12 +78,22 @@ func _add_audio() -> void:
 
 
 func _process(delta: float) -> void:
-	heart.volume_db = lerpf(-60.0, -3.0, Game.threat)
+	var now := Time.get_ticks_msec()
+	var quiet := now < Game.silence_until            # silence before the scare
+	drone.volume_db = lerpf(drone.volume_db, -60.0 if quiet else -12.0, minf(delta * 4.0, 1.0))
+	heart.volume_db = -60.0 if quiet else lerpf(-60.0, -3.0, Game.threat)
 	heart.pitch_scale = 0.9 + Game.threat * 0.9
+	if _was_quiet and not quiet:
+		_boom()
+	_was_quiet = quiet
+	var dark := now < Game.blackout_until
 	# lights flicker / die more the closer the monster is
-	var chaos := 0.05 + Game.threat * 0.5
+	var chaos := 0.05 + Game.threat * 0.5 + (0.9 if now < Game.chaos_until else 0.0)
 	for l in get_tree().get_nodes_in_group("lamps"):
 		var base: float = l.get_meta("base")
+		if dark:
+			l.light_energy = 0.0
+			continue
 		var dead: float = l.get_meta("dead", 0.0)
 		if dead <= 0.0 and randf() < chaos * delta * 4.0:
 			dead = randf_range(0.05, 0.3)
@@ -102,3 +114,12 @@ func _on_peer_left(id: int) -> void:
 	var n := get_node_or_null(str(id))
 	if n:
 		n.queue_free()
+
+
+func _boom() -> void:
+	var p := AudioStreamPlayer.new()
+	p.stream = ProcAudio.get_sound("thud")
+	p.volume_db = 6.0
+	add_child(p)
+	p.play()
+	p.finished.connect(p.queue_free)

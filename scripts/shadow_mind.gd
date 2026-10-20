@@ -16,6 +16,13 @@ var data: Dictionary = {}
 var tactic := ""
 var leg_reward := 0.0
 var _save_t := 20.0
+const TRICKS := ["blackout", "steps_behind", "silence", "flicker", "whisper_far", "peek"]
+var tension := 0.2
+var trick_cd := 25.0
+var last_trick := ""
+var watch_t := 0.0
+var watch_trick := ""
+var last_talk := -100.0
 
 
 func _ready() -> void:
@@ -23,6 +30,7 @@ func _ready() -> void:
 	data["games"] = int(data["games"]) + 1
 	_save()
 	Game.game_won.connect(_on_won)
+	Game.objective_changed.connect(_on_obj)
 	Game.game_over.connect(_on_over)
 
 
@@ -36,7 +44,7 @@ func _process(delta: float) -> void:
 # ------------------------------------------------------------------ persistence
 func _load() -> Dictionary:
 	var d := {"games": 0, "deaths": 0, "wins": 0, "heat": [], "zone_use": {}, "run_ratio": 0.2,
-		"stare_break": 0.5, "noise_avg": 0.2, "arms": {}, "facts": []}
+		"stare_break": 0.5, "noise_avg": 0.2, "arms": {}, "facts": [], "tricks": {}, "talks": 0}
 	if FileAccess.file_exists(SAVE_PATH):
 		var f := FileAccess.open(SAVE_PATH, FileAccess.READ)
 		if f != null:
@@ -52,6 +60,9 @@ func _load() -> Dictionary:
 	for t in TACTICS:
 		if not d["arms"].has(t):
 			d["arms"][t] = {"n": 0, "r": 0.0}
+	for t in TRICKS:
+		if not d["tricks"].has(t):
+			d["tricks"][t] = {"n": 0, "r": 0.0}
 	return d
 
 
@@ -131,6 +142,7 @@ func choose(m) -> bool:
 	_finish_leg()
 	tactic = _pick_tactic()
 	leg_reward = 0.0
+	pick_style(m)
 	Game.mind_status = "Mind: %s | night %d" % [tactic, Game.night]
 	if not _apply(tactic, m):
 		tactic = "roam_heat"
@@ -292,3 +304,163 @@ func line(ctx: String, pname: String) -> String:
 			if wins > 0:
 				pool.append("هربتَ %d مرة… لن تهرب الليلة." % wins)
 	return pool.pick_random()
+
+
+# ------------------------------------------------------------------ movement director
+## Invents how it moves this leg (not a fixed animation): stalk / crawl / limp / walk + random tempo.
+func pick_style(m) -> void:
+	var latest := 9999.0
+	var now := Time.get_ticks_msec()
+	for n in m.seen_t:
+		latest = minf(latest, (now - int(m.seen_t[n])) / 1000.0)
+	var r := randf()
+	if r < 0.15:
+		m.style = "limp"
+		m.style_speed = 0.8
+	elif latest < 8.0:
+		m.style = "stalk"       # you were just here: slow, silent, low
+		m.style_speed = 0.6
+	elif latest > 40.0 and r < 0.6:
+		m.style = "crawl"       # lost you for a while: scuttle on all fours to cover ground
+		m.style_speed = 1.9
+	else:
+		m.style = "walk"
+		m.style_speed = 1.0
+	m.style_speed *= randf_range(0.9, 1.15)
+
+
+# ------------------------------------------------------------------ horror pacing director
+## Horror rules it follows: build tension with quiet, never repeat the same scare, scare right after
+## you succeed (objective done), use silence/darkness/sound behind you before showing itself,
+## and learn which tricks actually make *you* panic (run / make noise).
+func _on_obj(_t: String) -> void:
+	tension = minf(tension + 0.5, 1.5)
+
+
+func tick(delta: float, m) -> void:
+	trick_cd -= delta
+	tension = minf(tension + delta * 0.035 * (1.0 + m.aggression), 1.5)
+	if watch_t > 0.0:
+		watch_t -= delta
+		var hit := false
+		for p in m._alive_players():
+			if p.speed_now > 3.5 or p.noise_level > 0.6:
+				hit = true
+		if hit or watch_t <= 0.0:
+			_trick_result(hit)
+	if tension >= 1.0 and trick_cd <= 0.0:
+		_do_trick(m)
+
+
+func _trick_result(hit: bool) -> void:
+	if watch_trick != "":
+		var a: Dictionary = data["tricks"][watch_trick]
+		a["n"] = int(a["n"]) + 1
+		if hit:
+			a["r"] = float(a["r"]) + 1.0
+	watch_t = 0.0
+	watch_trick = ""
+
+
+func _do_trick(m) -> void:
+	var ps: Array = m._alive_players()
+	if ps.is_empty():
+		return
+	var ws: Array = []
+	var tot := 0.0
+	for t in TRICKS:
+		var a: Dictionary = data["tricks"][t]
+		var rate := 0.5 if int(a["n"]) == 0 else float(a["r"]) / int(a["n"])
+		var w := 0.6 + rate
+		if t == last_trick:
+			w *= 0.3
+		if t == "blackout" and m.aggression < 0.1 and Game.night < 2:
+			w *= 0.3                  # early nights are gentler
+		ws.append(w)
+		tot += w
+	var r := randf() * tot
+	var pick: String = TRICKS[0]
+	for i in TRICKS.size():
+		r -= ws[i]
+		if r <= 0.0:
+			pick = TRICKS[i]
+			break
+	last_trick = pick
+	trick_cd = randf_range(22.0, 40.0)
+	tension = 0.15
+	watch_trick = pick
+	watch_t = 6.0
+	var p = ps.pick_random()
+	var now := Time.get_ticks_msec()
+	match pick:
+		"blackout":
+			var secs := randf_range(2.5, 4.5)
+			Game.blackout_until = now + int(secs * 1000.0)
+			m.trick_appear(secs)
+		"steps_behind":
+			m._all("fx_steps", [str(p.name).to_int()])
+		"silence":
+			Game.silence_until = now + 6000
+		"flicker":
+			Game.chaos_until = now + 5000
+		"whisper_far":
+			m._all("say", [line("hunt", p.display_name)])
+		"peek":
+			m.trick_peek()
+
+
+# ------------------------------------------------------------------ conversation policy
+func talk_context(pname: String) -> Dictionary:
+	var habit := "تحاول أن تكون هادئاً"
+	if _f("run_ratio") > 0.4:
+		habit = "تركض كثيراً"
+	elif _f("stare_break") < 0.3:
+		habit = "تثبت جيداً تحت نظري"
+	return {"name": pname, "night": Game.night, "wins": int(data["wins"]), "deaths": int(data["deaths"]), "habit": habit}
+
+
+## He does NOT answer every time: cooldown + probability that depends on what you said and his mood.
+func should_talk(intent: String, staring: bool, aggression: float) -> bool:
+	var now := Time.get_ticks_msec() / 1000.0
+	if now - last_talk < 18.0:
+		return false
+	var p := 0.45
+	if intent in ["plead", "who", "why", "greet", "help", "bargain"]:
+		p += 0.25
+	if staring:
+		p += 0.15
+	p -= aggression * 0.2
+	if randf() < clampf(p, 0.15, 0.85):
+		last_talk = now
+		return true
+	return false
+
+
+func decide(intent: String, aggression: float) -> String:
+	var spare := 0.2
+	var punish := 0.3
+	match intent:
+		"plead":
+			spare += 0.1
+		"insult":
+			punish += 0.35
+			spare = 0.05
+		"threat":
+			punish += 0.35
+			spare = 0.05
+		"voice_loud":
+			punish += 0.25
+		"voice_calm":
+			spare += 0.1
+	punish = minf(punish + 0.03 * Game.night + aggression * 0.2, 0.85)
+	spare = maxf(spare - aggression * 0.1, 0.03)
+	var r := randf()
+	if r < punish:
+		return "punish"
+	if r < punish + spare:
+		return "spare"
+	return "toy"
+
+
+func note_talk(_intent: String) -> void:
+	data["talks"] = int(data.get("talks", 0)) + 1

@@ -8,6 +8,7 @@ signal confrontation(victim_id: int, on: bool)
 signal fade_requested
 signal game_over
 signal game_won
+signal speech_heard(pid: int, dur: float, peak: float, text: String)
 
 const STARE_TIME := 7.0   # the "7 second rule"
 enum Step { GENERATOR, LEVER, WHEEL, EXIT, ESCAPED }
@@ -29,8 +30,14 @@ var finished := false
 const AI_URL_DEFAULT := "https://api.anthropic.com/v1/messages"
 var ai_key := ""
 var ai_url := AI_URL_DEFAULT
+var ai_model := "qwen2.5:3b"   # used with a local OpenAI-compatible server (Ollama)
 var ai_status := "AI: off"
 var mind_status := ""
+var blackout_until := 0
+var chaos_until := 0
+var silence_until := 0
+var mute_mic_until := 0
+var typing := false
 var night := 1            # endless: each escape makes the next night harder
 const ZONE_NAMES := ["القاعة الغربية", "القاعة الشرقية", "وسط القاعة", "الجهة الشرقية", "غرفة الخروج الغربية", "غرفة الخروج الشرقية", "غرفة المولد", "غرفة المراقبة", "زاوية المولد"]
 const OBJ_POS := [Vector3(-17.5, 0, 17), Vector3(17.5, 0, 17), Vector3(0, 0, -18)]
@@ -43,7 +50,7 @@ func _ready() -> void:
 	load_settings()
 	var keys := {
 		"move_forward": KEY_W, "move_back": KEY_S, "move_left": KEY_A, "move_right": KEY_D,
-		"sprint": KEY_SHIFT, "crouch": KEY_C, "crawl": KEY_Z, "interact": KEY_E, "flashlight": KEY_F,
+		"sprint": KEY_SHIFT, "crouch": KEY_C, "crawl": KEY_Z, "interact": KEY_E, "flashlight": KEY_F, "talk": KEY_T,
 	}
 	for action in keys:
 		if not InputMap.has_action(action):
@@ -69,6 +76,10 @@ func _reset() -> void:
 	finished = false
 	local_player = null
 	threat = 0.0
+	blackout_until = 0
+	chaos_until = 0
+	silence_until = 0
+	typing = false
 
 
 func restart() -> void:
@@ -113,6 +124,7 @@ func register_death(id: int) -> void:
 
 func whisper(text: String, pitch := 0.3, rate := 0.7) -> void:
 	subtitle.emit(text)
+	mute_mic_until = Time.get_ticks_msec() + int(text.length() * 90.0) + 900
 	var voices := DisplayServer.tts_get_voices_for_language("ar")
 	if voices.is_empty():
 		voices = DisplayServer.tts_get_voices_for_language("en")
@@ -149,6 +161,7 @@ func load_settings() -> void:
 	use_mic = c.get_value("player", "mic", use_mic)
 	ai_key = c.get_value("ai", "key", "")
 	ai_url = c.get_value("ai", "url", AI_URL_DEFAULT)
+	ai_model = c.get_value("ai", "model", ai_model)
 	night = c.get_value("progress", "night", 1)
 
 
@@ -158,6 +171,7 @@ func save_settings() -> void:
 	c.set_value("player", "mic", use_mic)
 	c.set_value("ai", "key", ai_key)
 	c.set_value("ai", "url", ai_url)
+	c.set_value("ai", "model", ai_model)
 	c.set_value("progress", "night", night)
 	c.save("user://settings.cfg")
 
@@ -166,3 +180,17 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and event.keycode == KEY_F11:
 		var fs := DisplayServer.window_get_mode() == DisplayServer.WINDOW_MODE_FULLSCREEN
 		DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED if fs else DisplayServer.WINDOW_MODE_FULLSCREEN)
+
+
+# ---- talking to the monster (voice activity from the mic, or typed text) ----
+@rpc("any_peer", "call_local", "reliable")
+func report_speech(pid: int, dur: float, peak: float, text: String) -> void:
+	speech_heard.emit(pid, dur, peak, text)
+
+
+func say_to_monster(text: String) -> void:
+	var lp = local_player
+	if lp == null or not is_instance_valid(lp) or not lp.alive:
+		return
+	subtitle.emit("أنت: " + text)
+	fire("report_speech", [my_id(), 1.5, 0.4, text])

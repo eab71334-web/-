@@ -19,6 +19,7 @@ var in_hide_zone: HideZone = null
 var current_interactable: Interactable = null
 var crouch_on := false
 var crawl_on := false
+var flash_on := true
 
 var head: Node3D
 var cam: Camera3D
@@ -74,6 +75,7 @@ func _ready() -> void:
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 		vm = Viewmodel.new()
 		cam.add_child(vm)
+		Mic.utterance.connect(_on_utterance)
 	else:
 		light.visible = false
 		rig = HumanRig.new()
@@ -133,7 +135,7 @@ func do_crawl() -> void:
 
 
 func do_flashlight() -> void:
-	light.visible = not light.visible
+	flash_on = not flash_on
 
 
 func do_interact() -> void:
@@ -158,6 +160,8 @@ func _physics_process(delta: float) -> void:
 		speed_now = 0.0
 		return
 	var input := Input.get_vector("move_left", "move_right", "move_forward", "move_back")
+	if Game.typing:
+		input = Vector2.ZERO
 	if hidden:
 		velocity = Vector3.ZERO
 		speed_now = 0.0
@@ -246,6 +250,7 @@ func _process(delta: float) -> void:
 			tgt = maxf(tgt, 0.9)
 	Game.threat = lerpf(Game.threat, tgt, minf(delta * 2.5, 1.0))
 	cam.fov = lerpf(cam.fov, 75.0 + Game.threat * 10.0, minf(delta * 3.0, 1.0))
+	light.visible = flash_on and Time.get_ticks_msec() >= Game.blackout_until
 	_look_delta = _look_delta.lerp(Vector2.ZERO, minf(delta * 10.0, 1.0))
 	if vm != null:
 		vm.update(delta, speed_now, _look_delta)
@@ -279,3 +284,9 @@ func shake(strength: float) -> void:
 func finish_death() -> void:
 	Game.fade_requested.emit()
 	Game.fire("register_death", [str(name).to_int()])
+
+
+func _on_utterance(dur: float, peak: float) -> void:
+	if not alive or locked or not Game.use_mic:
+		return
+	Game.fire("report_speech", [str(name).to_int(), dur, peak, ""])

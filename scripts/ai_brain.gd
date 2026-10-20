@@ -30,6 +30,10 @@ func _ready() -> void:
 	Game.ai_status = "AI: on" if enabled() else "AI: off"
 
 
+func _openai() -> bool:
+	return Game.ai_url.contains("/v1/chat/completions")
+
+
 func enabled() -> bool:
 	return Game.ai_key != "" or Game.ai_url != Game.AI_URL_DEFAULT
 
@@ -49,15 +53,22 @@ func think(snapshot: Dictionary) -> void:
 		return
 	busy = true
 	Game.ai_status = "AI: thinking"
-	var body := {
-		"model": MODEL,
-		"max_tokens": 220,
-		"system": SYSTEM,
-		"messages": [{"role": "user", "content": JSON.stringify({"snapshot": snapshot, "recent_events": memory, "your_notes": notes})}],
-	}
-	var headers := ["content-type: application/json", "anthropic-version: 2023-06-01"]
-	if Game.ai_key != "":
-		headers.append("x-api-key: " + Game.ai_key)
+	var user_msg := JSON.stringify({"snapshot": snapshot, "recent_events": memory, "your_notes": notes})
+	var body := {}
+	var headers := ["content-type: application/json"]
+	if _openai():
+		http.timeout = 40.0      # small local models can be slow
+		body = {"model": Game.ai_model, "max_tokens": 220, "temperature": 0.9,
+			"response_format": {"type": "json_object"},
+			"messages": [{"role": "system", "content": SYSTEM}, {"role": "user", "content": user_msg}]}
+		if Game.ai_key != "":
+			headers.append("Authorization: Bearer " + Game.ai_key)
+	else:
+		http.timeout = 10.0
+		body = {"model": MODEL, "max_tokens": 220, "system": SYSTEM, "messages": [{"role": "user", "content": user_msg}]}
+		headers.append("anthropic-version: 2023-06-01")
+		if Game.ai_key != "":
+			headers.append("x-api-key: " + Game.ai_key)
 	if http.request(Game.ai_url, headers, HTTPClient.METHOD_POST, JSON.stringify(body)) != OK:
 		busy = false
 		cooldown = 20.0
@@ -74,7 +85,9 @@ func _on_done(result: int, code: int, _h: PackedStringArray, body: PackedByteArr
 	Game.ai_status = "AI: on"
 	var txt := ""
 	var j = JSON.parse_string(body.get_string_from_utf8())
-	if j is Dictionary and j.has("content"):
+	if j is Dictionary and j.has("choices") and j["choices"] is Array and not j["choices"].is_empty():
+		txt = str(j["choices"][0].get("message", {}).get("content", ""))
+	elif j is Dictionary and j.has("content"):
 		for b in j["content"]:
 			if b is Dictionary and b.get("type", "") == "text":
 				txt += str(b.get("text", ""))

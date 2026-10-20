@@ -5,7 +5,7 @@ class_name Monster
 ##         PATROL -> (sees you) STARE for 7 s -> CHASE if you move or make noise -> KILL
 ## Learning: remembers where it saw you, which crates you hid behind, and gets angrier every time you survive a stare.
 
-enum State { PATROL, INVESTIGATE, CHASE, STARE, SEARCH_HIDE, CONFRONT, KILLING }
+enum State { PATROL, INVESTIGATE, CHASE, STARE, SEARCH_HIDE, CONFRONT, KILLING, TALK }
 
 const PATROL_SPEED := 2.4
 const CHASE_SPEED := 5.0
@@ -36,6 +36,11 @@ var name_cd := 15.0
 var brain: AIBrain
 var mind: ShadowMind
 var hold_t := 0.0
+var style := "walk"
+var style_speed := 1.0
+var talk_t := 0.0
+var talk_dur := 4.0
+var talk_outcome := "toy"
 var ai_t := 3.0
 var seen_post := {}
 const POSTURES := ["standing", "running", "crouching", "crawling", "hiding"]
@@ -102,6 +107,7 @@ func _ready() -> void:
 	get_tree().create_timer(4.0).timeout.connect(func(): _all("say", [mind.line("greet", Game.player_name)]))
 	Game.noise_made.connect(_on_noise)
 	Game.objective_changed.connect(_on_objective)
+	Game.speech_heard.connect(_on_speech)
 	_pick_patrol()
 
 
@@ -110,6 +116,8 @@ func _physics_process(delta: float) -> void:
 	if not Game.is_host() or state == State.KILLING or Game.finished:
 		return
 	_learn(delta)
+	if state in [State.PATROL, State.INVESTIGATE, State.SEARCH_HIDE]:
+		mind.tick(delta, self)
 	ai_t -= delta
 	if ai_t <= 0.0 and state in [State.PATROL, State.INVESTIGATE, State.SEARCH_HIDE]:
 		ai_t = 4.0
@@ -132,6 +140,7 @@ func _physics_process(delta: float) -> void:
 		State.STARE: _stare(delta)
 		State.CHASE: _chase(delta)
 		State.CONFRONT: _confront(delta)
+		State.TALK: _talk(delta)
 
 
 func _set_state(s: int) -> void:
@@ -243,7 +252,7 @@ func _patrol(delta: float) -> void:
 			mind.note_noise(p.noise_level)
 			_start_investigate(p.global_position)
 			return
-	if _move_to(dest, PATROL_SPEED, delta):
+	if _move_to(dest, PATROL_SPEED * style_speed, delta):
 		if hold_t > 0.0:
 			hold_t -= delta
 			rotation.y += delta * 0.8      # stands still, listening
@@ -355,7 +364,7 @@ func _search_hide(delta: float) -> void:
 		if _can_notice() and _can_see(p):
 			_on_spotted(p)
 			return
-	if _move_to(current_zone.global_position + Vector3(0, 0, 2.0), PATROL_SPEED, delta) \
+	if _move_to(current_zone.global_position + Vector3(0, 0, 2.0), PATROL_SPEED * style_speed, delta) \
 			or global_position.distance_to(current_zone.global_position) < 2.8:
 		_begin_confront()
 
@@ -462,6 +471,7 @@ func _start_kill(victim: Player) -> void:
 @rpc("authority", "call_local", "reliable")
 func call_name(n: String) -> void:
 	Game.whisper(n, randf_range(0.2, 0.5), randf_range(0.55, 0.8))
+	rig.speak_for(1.4)
 
 
 @rpc("authority", "call_local", "reliable")
@@ -585,6 +595,7 @@ func _process(delta: float) -> void:
 	var flat := Vector3(global_position.x - _last_pos.x, 0.0, global_position.z - _last_pos.z)
 	_last_pos = global_position
 	_speed_s = lerpf(_speed_s, minf(flat.length() / maxf(delta, 0.001), 7.0), minf(delta * 8.0, 1.0))
+	rig.style = style
 	rig.animate(delta, _speed_s, state, Time.get_ticks_msec() / 1000.0)
 	breath.pitch_scale = 1.4 if state == State.CHASE else 0.9
 
@@ -674,3 +685,121 @@ func _on_ai(d: Dictionary) -> void:
 @rpc("authority", "call_local", "reliable")
 func say(text: String) -> void:
 	Game.whisper(text, randf_range(0.2, 0.45), 0.65)
+	rig.speak_for(text.length() * 0.09 + 0.8)
+
+
+# ------------------------------------------------------------------ hearing you speak
+func _on_speech(pid: int, dur: float, peak: float, text: String) -> void:
+	var p := _find_player(pid)
+	if p == null or not p.alive:
+		return
+	if state in [State.CHASE, State.KILLING, State.CONFRONT, State.TALK]:
+		return
+	var intent := ShadowTalk.intent(text) if text != "" else ShadowTalk.voice_intent(peak)
+	brain.remember("%s spoke to me (%s)" % [p.display_name, intent])
+	if global_position.distance_to(p.global_position) > 7.0:
+		if state in [State.PATROL, State.INVESTIGATE, State.SEARCH_HIDE]:
+			_start_investigate(p.global_position)      # heard a voice somewhere
+		return
+	if mind.should_talk(intent, state == State.STARE, aggression):
+		_begin_talk(p, intent)
+	elif state != State.STARE:
+		target = p
+		_set_state(State.STARE)                        # answers with silence: stares instead
+
+
+func _begin_talk(p: Player, intent: String) -> void:
+	target = p
+	_set_state(State.TALK)
+	talk_outcome = mind.decide(intent, aggression)
+	var line := ShadowTalk.reply(intent, mind.talk_context(p.display_name))
+	talk_t = 0.0
+	talk_dur = 3.0 + line.length() * 0.06
+	mind.note_talk(intent)
+	_all("say", [line])
+
+
+func _talk(delta: float) -> void:
+	velocity = Vector3.ZERO
+	if target == null or not is_instance_valid(target) or not target.alive:
+		_set_state(State.PATROL)
+		return
+	_face_point(target.global_position, delta, 6.0)
+	talk_t += delta
+	if target.noise_level > 0.85 or target.speed_now > 3.5:
+		_set_state(State.CHASE)          # you shouted or bolted in the middle of the conversation
+		return
+	if talk_t < talk_dur:
+		return
+	var c := mind.talk_context(target.display_name)
+	match talk_outcome:
+		"spare":
+			_all("say", [ShadowTalk.outcome_line("spare", c)])
+			ignore_until = Time.get_ticks_msec() + 12000
+			dest = patrol_points.pick_random()
+			style = "stalk"
+			_set_state(State.PATROL)
+		"punish":
+			_all("say", [ShadowTalk.outcome_line("punish", c)])
+			_set_state(State.CHASE)
+		_:
+			_all("say", [ShadowTalk.outcome_line("toy", c)])
+			_set_state(State.STARE)
+
+
+# ------------------------------------------------------------------ horror tricks (called by ShadowMind)
+func trick_appear(secs: float) -> void:
+	if not (state in [State.PATROL, State.INVESTIGATE, State.SEARCH_HIDE]):
+		return
+	if aggression < 0.25 and randf() > 0.35:
+		return
+	var ps := _alive_players()
+	if ps.is_empty():
+		return
+	var p = ps.pick_random()
+	await get_tree().create_timer(0.6).timeout          # lights die... then he is just THERE
+	if state == State.KILLING or not is_instance_valid(p) or not p.alive:
+		return
+	var fwd: Vector3 = -p.global_transform.basis.z
+	var spot := NavigationServer3D.map_get_closest_point(get_world_3d().navigation_map, p.global_position + fwd * 8.0)
+	global_position = Vector3(spot.x, 0.0, spot.z)
+	look_at(Vector3(p.global_position.x, global_position.y, p.global_position.z), Vector3.UP)
+	target = p
+	_set_state(State.STARE)
+
+
+func trick_peek() -> void:
+	if not (state in [State.PATROL, State.INVESTIGATE, State.SEARCH_HIDE]):
+		return
+	var ps := _alive_players()
+	if ps.is_empty():
+		return
+	var p = ps.pick_random()
+	var fwd: Vector3 = -p.global_transform.basis.z
+	dest = NavigationServer3D.map_get_closest_point(get_world_3d().navigation_map, p.global_position + fwd * 14.0)
+	hold_t = 7.0
+	style = "stalk"
+	_set_state(State.PATROL)
+
+
+@rpc("authority", "call_local", "reliable")
+func fx_steps(pid: int) -> void:
+	if Game.my_id() != pid:
+		return
+	var lp = Game.local_player
+	if lp == null or not is_instance_valid(lp):
+		return
+	var snd := AudioStreamPlayer3D.new()
+	snd.stream = ProcAudio.get_sound("thud")
+	snd.unit_size = 6.0
+	snd.volume_db = 4.0
+	get_tree().current_scene.add_child(snd)
+	var back: Vector3 = lp.global_transform.basis.z
+	for i in 5:
+		if not is_instance_valid(lp):
+			break
+		snd.global_position = lp.global_position + back * (9.0 - i * 1.6) + Vector3(0, 0.1, 0)
+		snd.pitch_scale = randf_range(0.8, 1.1)
+		snd.play()
+		await get_tree().create_timer(0.55).timeout
+	snd.queue_free()
