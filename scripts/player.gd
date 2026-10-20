@@ -56,9 +56,9 @@ func _ready() -> void:
 	cam.fov = 75.0
 	head.add_child(cam)
 	light = SpotLight3D.new()
-	light.spot_range = 16.0
-	light.spot_angle = 38.0
-	light.light_energy = 2.0
+	light.spot_range = 22.0
+	light.spot_angle = 45.0
+	light.light_energy = 5.0
 	head.add_child(light)
 
 	var cfg := SceneReplicationConfig.new()
@@ -68,7 +68,7 @@ func _ready() -> void:
 	sync.replication_config = cfg
 	add_child(sync)
 
-	if is_multiplayer_authority():
+	if Game.is_mine(self):
 		cam.current = true
 		Game.local_player = self
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
@@ -88,7 +88,7 @@ func _ready() -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	if not is_multiplayer_authority() or locked or not alive:
+	if not Game.is_mine(self) or locked or not alive:
 		return
 	if event is InputEventMouseMotion:
 		if not Game.touch_mode and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
@@ -110,7 +110,7 @@ func _unhandled_input(event: InputEvent) -> void:
 
 # ---- actions (called by keyboard AND by the touch buttons) ------------------
 func apply_look(rel: Vector2) -> void:
-	if not is_multiplayer_authority() or locked or not alive:
+	if not Game.is_mine(self) or locked or not alive:
 		return
 	rotate_y(-rel.x * MOUSE_SENS)
 	pitch = clampf(pitch - rel.y * MOUSE_SENS, -1.4, 1.4)
@@ -151,7 +151,7 @@ func do_interact() -> void:
 
 
 func _physics_process(delta: float) -> void:
-	if not is_multiplayer_authority():
+	if not Game.is_mine(self):
 		return
 	if locked or not alive:
 		velocity = Vector3.ZERO
@@ -215,7 +215,7 @@ func _update_body(delta: float) -> void:
 
 
 func _process(delta: float) -> void:
-	if not is_multiplayer_authority():
+	if not Game.is_mine(self):
 		if rig != null:
 			rig.animate(delta, speed_now)
 			var sy := 1.0
@@ -278,4 +278,4 @@ func shake(strength: float) -> void:
 
 func finish_death() -> void:
 	Game.fade_requested.emit()
-	Game.register_death.rpc(str(name).to_int())
+	Game.fire("register_death", [str(name).to_int()])

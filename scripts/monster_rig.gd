@@ -6,11 +6,11 @@ class_name MonsterRig
 
 signal footstep
 
-var hips: Array = []
-var knees: Array = []
-var shoulders: Array = []
-var elbows: Array = []
-var rags: Array = []
+var hips: Array[Node3D] = []
+var knees: Array[Node3D] = []
+var shoulders: Array[Node3D] = []
+var elbows: Array[Node3D] = []
+var rags: Array[Node3D] = []
 var spine: Node3D
 var head: Node3D
 var jaw: Node3D

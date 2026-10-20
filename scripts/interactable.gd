@@ -20,7 +20,7 @@ func _ready() -> void:
 
 
 func _on_enter(b) -> void:
-	if b.is_in_group("players") and b.is_multiplayer_authority():
+	if b.is_in_group("players") and Game.is_mine(b):
 		b.current_interactable = self
 		_inside = b
 
@@ -49,15 +49,15 @@ func _process(delta: float) -> void:
 		return
 	if Input.is_action_pressed("interact"):
 		if held == 0.0:
-			Game.make_noise.rpc(global_position, noise)
+			Game.fire("make_noise", [global_position, noise])
 		held += delta
 		_noise_cd -= delta
 		if _noise_cd <= 0.0:
 			_noise_cd = 1.0
-			Game.make_noise.rpc(global_position, noise * 0.6)
+			Game.fire("make_noise", [global_position, noise * 0.6])
 		if held >= hold_time:
 			held = 0.0
-			Game.complete_step.rpc(step_index)
+			Game.fire("complete_step", [step_index])
 	else:
 		held = maxf(held - delta * 0.5, 0.0)
 	if visual:

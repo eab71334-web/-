@@ -26,12 +26,21 @@ var step: int = Step.GENERATOR
 var wheel_time := 8.0
 var dead_ids: Array = []
 var finished := false
+const AI_URL_DEFAULT := "https://api.anthropic.com/v1/messages"
+var ai_key := ""
+var ai_url := AI_URL_DEFAULT
+var ai_status := "AI: off"
+var mind_status := ""
+var night := 1            # endless: each escape makes the next night harder
+const ZONE_NAMES := ["القاعة الغربية", "القاعة الشرقية", "وسط القاعة", "الجهة الشرقية", "غرفة الخروج الغربية", "غرفة الخروج الشرقية", "غرفة المولد", "غرفة المراقبة", "زاوية المولد"]
+const OBJ_POS := [Vector3(-17.5, 0, 17), Vector3(17.5, 0, 17), Vector3(0, 0, -18)]
 var local_player: Node = null
 var threat := 0.0         # 0..1 fear level near the monster
 var touch_mode := false   # true on Android/iOS
 
 
 func _ready() -> void:
+	load_settings()
 	var keys := {
 		"move_forward": KEY_W, "move_back": KEY_S, "move_left": KEY_A, "move_right": KEY_D,
 		"sprint": KEY_SHIFT, "crouch": KEY_C, "crawl": KEY_Z, "interact": KEY_E, "flashlight": KEY_F,
@@ -83,6 +92,8 @@ func complete_step(s: int) -> void:
 	objective_changed.emit(OBJECTIVES[step])
 	if step == Step.ESCAPED:
 		finished = true
+		night += 1
+		save_settings()
 		game_won.emit()
 
 
@@ -108,3 +119,50 @@ func whisper(text: String, pitch := 0.3, rate := 0.7) -> void:
 	if voices.is_empty():
 		return
 	DisplayServer.tts_speak(text, voices[0], 70, pitch, rate, 0, true)
+
+
+# ---- solo-safe helpers: in single-player nothing depends on multiplayer authority/RPC ----
+func is_mine(n: Node) -> bool:
+	return solo or n.is_multiplayer_authority()
+
+
+func is_host() -> bool:
+	return solo or multiplayer.is_server()
+
+
+func my_id() -> int:
+	return 1 if solo else multiplayer.get_unique_id()
+
+
+func fire(method: String, args: Array) -> void:
+	if solo:
+		callv(method, args)
+	else:
+		callv("rpc", [method] + args)
+
+
+func load_settings() -> void:
+	var c := ConfigFile.new()
+	if c.load("user://settings.cfg") != OK:
+		return
+	player_name = c.get_value("player", "name", player_name)
+	use_mic = c.get_value("player", "mic", use_mic)
+	ai_key = c.get_value("ai", "key", "")
+	ai_url = c.get_value("ai", "url", AI_URL_DEFAULT)
+	night = c.get_value("progress", "night", 1)
+
+
+func save_settings() -> void:
+	var c := ConfigFile.new()
+	c.set_value("player", "name", player_name)
+	c.set_value("player", "mic", use_mic)
+	c.set_value("ai", "key", ai_key)
+	c.set_value("ai", "url", ai_url)
+	c.set_value("progress", "night", night)
+	c.save("user://settings.cfg")
+
+
+func _unhandled_input(event: InputEvent) -> void:
+	if event is InputEventKey and event.pressed and event.keycode == KEY_F11:
+		var fs := DisplayServer.window_get_mode() == DisplayServer.WINDOW_MODE_FULLSCREEN
+		DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED if fs else DisplayServer.WINDOW_MODE_FULLSCREEN)

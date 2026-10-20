@@ -26,7 +26,7 @@ static func grunge(c: Color) -> StandardMaterial3D:
 		_noise.height = 256
 		_noise.seamless = true
 	var m := StandardMaterial3D.new()
-	m.albedo_color = Color(c.r * 1.7, c.g * 1.7, c.b * 1.7)
+	m.albedo_color = Color(c.r * 2.6, c.g * 2.6, c.b * 2.6)
 	m.albedo_texture = _noise
 	m.uv1_triplanar = true
 	m.uv1_scale = Vector3(0.25, 0.25, 0.25)

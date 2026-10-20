@@ -33,6 +33,12 @@ var current_zone: HideZone = null
 var confront_noise := 0.0
 var confront_victim: Player = null
 var name_cd := 15.0
+var brain: AIBrain
+var mind: ShadowMind
+var hold_t := 0.0
+var ai_t := 3.0
+var seen_post := {}
+const POSTURES := ["standing", "running", "crouching", "crawling", "hiding"]
 var rig: MonsterRig
 var breath: AudioStreamPlayer3D
 var step_snd: AudioStreamPlayer3D
@@ -84,9 +90,16 @@ func _ready() -> void:
 	agent.height = 2.2
 	add_child(agent)
 
-	if not multiplayer.is_server():
+	if not Game.is_host():
 		return
 	hide_zones = get_tree().get_nodes_in_group("hide_zones")
+	brain = AIBrain.new()
+	add_child(brain)
+	brain.decided.connect(_on_ai)
+	mind = ShadowMind.new()
+	add_child(mind)
+	aggression = minf(0.1 * (Game.night - 1), 0.8)
+	get_tree().create_timer(4.0).timeout.connect(func(): _all("say", [mind.line("greet", Game.player_name)]))
 	Game.noise_made.connect(_on_noise)
 	Game.objective_changed.connect(_on_objective)
 	_pick_patrol()
@@ -94,16 +107,24 @@ func _ready() -> void:
 
 # ------------------------------------------------------------------ main loop
 func _physics_process(delta: float) -> void:
-	if not multiplayer.is_server() or state == State.KILLING or Game.finished:
+	if not Game.is_host() or state == State.KILLING or Game.finished:
 		return
 	_learn(delta)
+	ai_t -= delta
+	if ai_t <= 0.0 and state in [State.PATROL, State.INVESTIGATE, State.SEARCH_HIDE]:
+		ai_t = 4.0
+		brain.think(_snapshot())
 	if state in [State.PATROL, State.INVESTIGATE, State.SEARCH_HIDE]:
 		name_cd -= delta
 		if name_cd <= 0.0:
 			name_cd = randf_range(12.0, 25.0)
 			var ps := _alive_players()
 			if not ps.is_empty():
-				call_name.rpc(ps.pick_random().display_name)
+				var pl = ps.pick_random()
+				if randf() < 0.5:
+					_all("call_name", [pl.display_name])
+				else:
+					_all("say", [mind.line("hunt", pl.display_name)])
 	match state:
 		State.PATROL: _patrol(delta)
 		State.INVESTIGATE: _investigate(delta)
@@ -156,14 +177,18 @@ func _learn(delta: float) -> void:
 		if _can_see(p):
 			seen_t[p.name] = now
 			seen_pos[p.name] = p.global_position
+			seen_post[p.name] = POSTURES[p.posture]
 			if trail_timer <= 0.0:
 				player_trail.append(p.global_position)
+				mind.note_pos(p)
 				if player_trail.size() > 24:
 					player_trail.pop_front()
 		elif p.hidden and seen_t.has(p.name) and now - seen_t[p.name] < 6000:
 			var z := _nearest_zone(seen_pos[p.name])
 			if z != null:
 				z.score += 1.0     # "this one gets used" -> checked more often
+				brain.remember("%s vanished near hide zone %d" % [p.display_name, hide_zones.find(z)])
+				mind.note_zone(hide_zones.find(z))
 			seen_t.erase(p.name)
 	if trail_timer <= 0.0:
 		trail_timer = 3.0
@@ -194,6 +219,8 @@ func _face_point(p: Vector3, delta: float, speed: float) -> void:
 
 # ------------------------------------------------------------------ states
 func _pick_patrol() -> void:
+	if mind != null and mind.choose(self):
+		return
 	var r := randf()
 	if r < 0.35 and not player_trail.is_empty():
 		dest = player_trail.pick_random()           # where you have been
@@ -213,13 +240,22 @@ func _patrol(delta: float) -> void:
 			_on_spotted(p)
 			return
 		if _heard(p):
+			mind.note_noise(p.noise_level)
 			_start_investigate(p.global_position)
 			return
 	if _move_to(dest, PATROL_SPEED, delta):
-		_pick_patrol()
+		if hold_t > 0.0:
+			hold_t -= delta
+			rotation.y += delta * 0.8      # stands still, listening
+		else:
+			_pick_patrol()
 
 
 func _on_spotted(p: Player) -> void:
+	brain.remember("I saw %s %s" % [p.display_name, POSTURES[p.posture]])
+	mind.reward(1.5)
+	if randf() < 0.6:
+		_all("say", [mind.line("spot", p.display_name)])
 	target = p
 	last_known = p.global_position
 	if global_position.distance_to(p.global_position) < 3.5:
@@ -244,11 +280,14 @@ func _stare(delta: float) -> void:
 			_start_investigate(last_known)
 			return
 	if p.speed_now > 0.6 or p.noise_level > 0.5:
+		mind.note_stare(true)
 		_set_state(State.CHASE)      # you moved or made noise: he attacks at once
 		return
 	timer -= delta
 	if timer <= 0.0:                  # you survived the stare
 		aggression = minf(aggression + 0.15, 1.0)
+		brain.remember("%s stood still under my 7-second stare and survived" % p.display_name)
+		mind.note_stare(false)
 		ignore_until = Time.get_ticks_msec() + 5000
 		_start_investigate(p.global_position)
 
@@ -268,7 +307,7 @@ func _chase(delta: float) -> void:
 	if lost_sight > 4.0:
 		_start_investigate(last_known)
 		return
-	_move_to(last_known, CHASE_SPEED * (1.0 + aggression * 0.15), delta)
+	_move_to(last_known, CHASE_SPEED * (1.0 + aggression * 0.15 + 0.03 * minf(Game.night - 1, 10.0)), delta)
 
 
 func _start_investigate(pos: Vector3) -> void:
@@ -337,7 +376,7 @@ func _begin_confront() -> void:
 	var vid := -1
 	if confront_victim != null:
 		vid = str(confront_victim.name).to_int()
-	_confront_ui.rpc(vid, true)
+	_all("_confront_ui", [vid, true])
 	create_tween().tween_property(self, "position:y", current_zone.global_position.y + 0.9, 1.0)
 
 
@@ -352,14 +391,14 @@ func _confront(delta: float) -> void:
 			_end_confront(true)       # popped out of hiding
 			return
 		if (timer < 3.0 and timer + delta >= 3.0) or (timer < 1.5 and timer + delta >= 1.5):
-			call_name.rpc(v.display_name)
+			_all("call_name", [v.display_name])
 	if timer <= 0.0:
 		var suspicion := 0.25 + current_zone.score * 0.2 + aggression * 0.3
 		_end_confront(v != null and v.alive and v.hidden and (confront_noise > 0.4 or randf() < suspicion))
 
 
 func _end_confront(kill: bool) -> void:
-	_confront_ui.rpc(-1, false)
+	_all("_confront_ui", [-1, false])
 	current_zone.last_checked = Time.get_ticks_msec()
 	if kill and confront_victim != null:
 		_start_kill(confront_victim)
@@ -373,6 +412,7 @@ func _end_confront(kill: bool) -> void:
 
 # ------------------------------------------------------------------ events
 func _on_noise(pos: Vector3, loudness: float) -> void:
+	brain.remember("heard a noise (%.1f) near x=%d z=%d" % [loudness, int(pos.x), int(pos.z)])
 	if state in [State.PATROL, State.INVESTIGATE, State.SEARCH_HIDE] \
 			and global_position.distance_to(pos) < loudness * 30.0:
 		_start_investigate(pos)
@@ -408,12 +448,15 @@ func _find_player(id: int) -> Player:
 # ------------------------------------------------------------------ dynamic kills
 func _start_kill(victim: Player) -> void:
 	state = State.KILLING
+	brain.remember("I caught and killed %s" % victim.display_name)
 	var kind := "intercept_slam"
 	if victim.hidden:
 		kind = ["crush_crate", "reach_through"].pick_random()
 	elif victim.posture == Player.Posture.CRAWL:
 		kind = "stomp_lift"
-	play_kill.rpc(str(victim.name).to_int(), kind, randi())
+	mind.reward(3.0)
+	mind.on_kill(victim, kind)
+	_all("play_kill", [str(victim.name).to_int(), kind, randi()])
 
 
 @rpc("authority", "call_local", "reliable")
@@ -441,8 +484,8 @@ func play_kill(victim_id: int, kind: String, seed_val: int) -> void:
 	rng.seed = seed_val
 	var ang := rng.randf() * TAU
 	var side := Vector3(sin(ang), 0.0, cos(ang))
-	var mine := is_multiplayer_authority()        # server moves the monster
-	var vmine := v.is_multiplayer_authority()     # victim's own peer moves the victim
+	var mine := Game.is_host()        # server moves the monster
+	var vmine := Game.is_mine(v)     # victim's own peer moves the victim
 	var vpos := v.global_position
 	var mpos := vpos + side * 1.5
 	mpos.y = vpos.y
@@ -558,3 +601,76 @@ func _sting() -> void:
 	add_child(p)
 	p.play()
 	p.finished.connect(p.queue_free)
+
+
+func _all(method: String, args: Array) -> void:
+	if Game.solo:
+		callv(method, args)
+	else:
+		callv("rpc", [method] + args)
+
+
+# ------------------------------------------------------------------ LLM director
+## Only what the monster could have sensed: no omniscient positions.
+func _snapshot() -> Dictionary:
+	var now := Time.get_ticks_msec()
+	var ps: Array = []
+	for p in _alive_players():
+		var ago := -1.0
+		if seen_t.has(p.name):
+			ago = snappedf((now - seen_t[p.name]) / 1000.0, 0.1)
+		var at := []
+		if seen_pos.has(p.name):
+			at = [int(seen_pos[p.name].x), int(seen_pos[p.name].z)]
+		ps.append({
+			"name": p.display_name,
+			"visible_now": _can_see(p),
+			"heard_now": _heard(p),
+			"seconds_since_seen": ago,
+			"last_seen_at": at,
+			"last_seen_as": seen_post.get(p.name, "unknown"),
+		})
+	var zs: Array = []
+	for i in hide_zones.size():
+		var z: HideZone = hide_zones[i]
+		zs.append({"i": i, "at": [int(z.global_position.x), int(z.global_position.z)], "player_used_times": z.score,
+			"checked_s_ago": snappedf((now - z.last_checked) / 1000.0, 1.0) if z.last_checked > 0 else -1})
+	return {
+		"my_state": State.keys()[state],
+		"i_am_at": [int(global_position.x), int(global_position.z)],
+		"aggression": snappedf(aggression, 0.05),
+		"objective_players_follow": Game.OBJECTIVES[Game.step],
+		"players": ps,
+		"hide_zones": zs,
+	}
+
+
+func _on_ai(d: Dictionary) -> void:
+	var line := str(d.get("line", "")).left(80)
+	if line != "":
+		_all("say", [line])
+	if not (state in [State.PATROL, State.INVESTIGATE, State.SEARCH_HIDE]):
+		return      # the LLM only steers calm states; chase/stare/kill stay rule-based and fair
+	match str(d.get("intent", "")):
+		"investigate":
+			var best := ""
+			for n in seen_t:
+				if best == "" or seen_t[n] > seen_t[best]:
+					best = n
+			if best != "":
+				_start_investigate(seen_pos[best])
+		"search_hide":
+			var zi := int(d.get("zone", -1))
+			if zi >= 0 and zi < hide_zones.size():
+				current_zone = hide_zones[zi]
+				noise_pos = current_zone.global_position
+				_set_state(State.SEARCH_HIDE)
+		"ambush":
+			if not player_trail.is_empty():
+				dest = player_trail.back()
+				_set_state(State.PATROL)
+
+
+@rpc("authority", "call_local", "reliable")
+func say(text: String) -> void:
+	Game.whisper(text, randf_range(0.2, 0.45), 0.65)

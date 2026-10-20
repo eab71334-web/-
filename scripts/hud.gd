@@ -29,6 +29,7 @@ var end_label: Label
 var restart_btn: Button
 var _sub_t := 0.0
 var fx_mat: ShaderMaterial
+var dbg: Label
 
 
 func _ready() -> void:
@@ -50,6 +51,8 @@ func _ready() -> void:
 
 	_mk(root, 0.5, -24, 28).text = "·"
 	prompt = _mk(root, 0.8, 0, 22)
+	dbg = _mk(root, 0.93, 0, 14)
+	dbg.modulate = Color(1, 1, 1, 0.5)
 	objective = _mk(root, 0.0, 12, 20)
 	subtitle = _mk(root, 0.68, 0, 34)
 	subtitle.add_theme_color_override("font_color", Color(0.8, 0.05, 0.05))
@@ -113,7 +116,7 @@ func _ready() -> void:
 	Game.confrontation.connect(_on_confront)
 	Game.fade_requested.connect(_on_dead)
 	Game.game_over.connect(func(): _show_end("انتهت اللعبة… قتلك الظل", true))
-	Game.game_won.connect(func(): _show_end("أغلقت الباب خلفك… نجوت!", true))
+	Game.game_won.connect(func(): _show_end("نجوت! لكن الظل يتعلم… الليلة %d أصعب" % Game.night, true))
 
 
 func _mk(root: Control, ay: float, off: float, size: int) -> Label:
@@ -132,7 +135,7 @@ func _mk(root: Control, ay: float, off: float, size: int) -> Label:
 
 
 func _on_confront(vid: int, on: bool) -> void:
-	confront.visible = on and vid == multiplayer.get_unique_id()
+	confront.visible = on and vid == Game.my_id()
 	confront_name.text = Game.player_name
 
 
@@ -143,8 +146,9 @@ func _on_dead() -> void:
 
 func _show_end(text: String, with_button: bool) -> void:
 	end_label.text = text
+	restart_btn.text = "الليلة التالية" if Game.finished else "حاول مجدداً"
 	end_panel.visible = true
-	restart_btn.visible = with_button and (Game.solo or multiplayer.is_server())
+	restart_btn.visible = with_button and (Game.solo or Game.is_host())
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	if with_button:
 		fade.color.a = maxf(fade.color.a, 0.6)
@@ -157,6 +161,10 @@ func _process(delta: float) -> void:
 	if _sub_t <= 0.0:
 		subtitle.text = ""
 	var lp = Game.local_player
+	if lp != null and is_instance_valid(lp):
+		dbg.text = "x %.1f  z %.1f   step %d" % [lp.global_position.x, lp.global_position.z, Game.step] + "   " + Game.ai_status + "   " + Game.mind_status
+	else:
+		dbg.text = "NO PLAYER"
 	if lp == null or not is_instance_valid(lp) or not lp.alive:
 		prompt.text = ""
 		return

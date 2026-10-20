@@ -2,8 +2,8 @@ extends Node3D
 class_name HumanRig
 ## Simple humanoid for other players (jacket, backpack, flashlight).
 
-var legs: Array = []
-var arms: Array = []
+var legs: Array[Node3D] = []
+var arms: Array[Node3D] = []
 var t := 0.0
 
 

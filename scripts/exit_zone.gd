@@ -9,5 +9,5 @@ func _ready() -> void:
 
 
 func _on_body(b) -> void:
-	if b.is_in_group("players") and b.is_multiplayer_authority() and Game.step == Game.Step.EXIT:
-		Game.complete_step.rpc(Game.Step.EXIT)
+	if b.is_in_group("players") and Game.is_mine(b) and Game.step == Game.Step.EXIT:
+		Game.fire("complete_step", [Game.Step.EXIT])

@@ -30,17 +30,28 @@ func _ready() -> void:
 	_layout()
 
 
+func _inset() -> float:
+	var win := DisplayServer.window_get_size()
+	if win.x <= 0:
+		return 12.0
+	var safe := DisplayServer.get_display_safe_area()
+	var side := maxf(float(safe.position.x), float(win.x - safe.end.x))
+	return maxf(side, 0.0) * _size.x / float(win.x) + 12.0
+
+
 func _layout() -> void:
 	_size = get_viewport().get_visible_rect().size
-	joy_base = Vector2(190, _size.y - 190)
+	var m := _inset()
+	joy_base = Vector2(m + 170.0, _size.y - 190.0)
 	if joy_idx == -1:
 		joy_center = joy_base
+	var r := _size.x - m
 	buttons = [
-		{"a": "interact", "t": "E", "p": Vector2(_size.x - 110, _size.y - 170), "hold": true, "down": false},
-		{"a": "sprint", "t": "RUN", "p": Vector2(_size.x - 250, _size.y - 100), "hold": true, "down": false},
-		{"a": "crouch", "t": "C", "p": Vector2(_size.x - 250, _size.y - 235), "hold": false, "down": false},
-		{"a": "crawl", "t": "Z", "p": Vector2(_size.x - 110, _size.y - 310), "hold": false, "down": false},
-		{"a": "flashlight", "t": "F", "p": Vector2(_size.x - 90, 90), "hold": false, "down": false},
+		{"a": "interact", "t": "E", "p": Vector2(r - 90.0, _size.y - 170.0), "hold": true, "down": false},
+		{"a": "sprint", "t": "RUN", "p": Vector2(r - 230.0, _size.y - 100.0), "hold": true, "down": false},
+		{"a": "crouch", "t": "C", "p": Vector2(r - 230.0, _size.y - 235.0), "hold": false, "down": false},
+		{"a": "crawl", "t": "Z", "p": Vector2(r - 90.0, _size.y - 310.0), "hold": false, "down": false},
+		{"a": "flashlight", "t": "F", "p": Vector2(r - 70.0, 90.0), "hold": false, "down": false},
 	]
 	canvas.queue_redraw()
 
