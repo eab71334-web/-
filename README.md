@@ -85,3 +85,16 @@ This is a learning AI, not a language model: running a real LLM fully offline on
 Host: menu → **استضافة** → shows your LAN IP and broadcasts the game (UDP 7778). Friends on the same Wi-Fi open the menu and tap your game in the list (or type the IP). Game traffic uses UDP 7777 — allow both ports in your firewall.
 iOS may block UDP broadcast without a special Apple entitlement; if the list stays empty, type the host's IP manually.
 Full screen: aspect = *expand* (no black bars), landscape forced on phones, **F11** toggles fullscreen on desktop, touch buttons respect the notch.
+
+## Free "smart" AI on your own PC (Ollama, no cloud, no cost)
+1. Install Ollama on a PC (free) and pull a model, e.g. `ollama pull qwen2.5:3b` (CPU) or `qwen2.5:7b` (GPU) — bigger = smarter.
+2. Let the LAN reach it: set env `OLLAMA_HOST=0.0.0.0`, restart Ollama, allow TCP 11434 in the firewall.
+3. In the game menu write `http://<PC-IP>:11434` and the model name. The monster's director then runs on your PC over Wi-Fi; if it is unreachable the built-in offline AI continues.
+Android may block plain-http traffic depending on the export template; if so put the server behind https.
+
+## Talking to the monster (offline)
+- **Type**: tap/press **تكلّم (T)**, write e.g. `سيبني`, `من انت؟`, `لماذا`, `please` — `shadow_talk.gd` understands Arabic/English keywords offline (plead, who, why, greet, insult, threat, bargain, help).
+- **Speak**: with the mic on, the game detects *that* you spoke, for how long and how loud (whisper vs shout). It does **not** transcribe words (no speech-to-text engine is bundled; a future STT plugin can call `Game.fire("report_speech", [pid, dur, peak, text])`).
+- He only answers sometimes (cooldown + probability by what you said and his mood), may spare you, toy with you (7-second stare), or punish you (chase). Shouting or running mid-conversation = chase. If you speak from far away he just comes to investigate.
+## Horror tricks & invented movement (`shadow_mind.gd`)
+Blackout + sudden appearance, footsteps behind you, sudden silence then a thud, light-flicker bursts, far whispers, peeking at the end of a corridor. A pacing director builds tension, never repeats the same trick, and learns which tricks make you panic. Each patrol leg he invents a movement style (stalk / crawl on all fours / limp / walk) with random tempo.
