@@ -69,3 +69,19 @@ git push -u origin main
 
 ## Look & feel
 Procedural monster (`monster_rig.gd`), player arms/flashlight (`viewmodel.gd`), humanoid for co-op teammates (`human_rig.gd`), generated horror audio (`proc_audio.gd`: drone, heartbeat, breathing, footsteps, sting), flickering lights, vignette/grain/red fear pulse shader.
+
+## Real-AI monster (optional)
+Menu → paste a **Claude API key**. Every ~10 s the monster's "director" (`scripts/ai_brain.gd`, model `claude-haiku-5-5`) gets a snapshot of what it *sensed* + its own memories/self-notes and returns JSON: tactic (investigate / search a hiding spot / ambush / taunt) and a whispered Arabic line. Chase, stare and kill logic stay rule-based so it is always fair. No key / no internet → the built-in AI runs as before.
+- Only the player name and a play summary are sent; **microphone audio is never sent**.
+- The key is stored in plain text in `user://settings.cfg` on the device. **Do not ship your own key inside a published APK/IPA** — run a small proxy server that holds the key and set `ai_url` to it.
+
+## Offline learning AI (default, no internet)
+`scripts/shadow_mind.gd` — the monster learns **on the device** and keeps learning forever (`user://shadow_mind.json`):
+heat-map of where you walk, your favourite hiding spots, how often you run, whether you freeze under the stare, how loud you are.
+It picks hunting tactics with a bandit (UCB1) and rewards the ones that find/catch you, so it adapts night after night. Each escape makes the next night harder (endless). Its spoken lines are generated from what it truly learned about you.
+This is a learning AI, not a language model: running a real LLM fully offline on a phone needs a native plugin and a ~1 GB model file.
+
+## LAN play
+Host: menu → **استضافة** → shows your LAN IP and broadcasts the game (UDP 7778). Friends on the same Wi-Fi open the menu and tap your game in the list (or type the IP). Game traffic uses UDP 7777 — allow both ports in your firewall.
+iOS may block UDP broadcast without a special Apple entitlement; if the list stays empty, type the host's IP manually.
+Full screen: aspect = *expand* (no black bars), landscape forced on phones, **F11** toggles fullscreen on desktop, touch buttons respect the notch.
