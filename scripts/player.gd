@@ -6,10 +6,11 @@ enum Posture { STAND, RUN, CROUCH, CRAWL, HIDING }
 
 const SPEEDS := {0: 3.0, 1: 5.5, 2: 1.6, 3: 0.8}
 const MOUSE_SENS := 0.0025
+const SUIT_COLORS := [Color(0.2, 0.35, 0.6), Color(0.6, 0.25, 0.2), Color(0.25, 0.5, 0.3), Color(0.55, 0.45, 0.15)]
 
 var display_name := "Player"
 var posture: int = Posture.STAND
-var noise_level := 0.0     # 0..1.5, replicated: monster hears based on this
+var noise_level := 0.0     # replicated: monster hears based on this
 var speed_now := 0.0       # replicated: monster sees movement based on this
 var alive := true
 var hidden := false
@@ -24,8 +25,12 @@ var cam: Camera3D
 var light: SpotLight3D
 var shape: CapsuleShape3D
 var col: CollisionShape3D
+var vm: Viewmodel
+var rig: HumanRig
 var pitch := 0.0
 var _shake := 0.0
+var _bob_t := 0.0
+var _look_delta := Vector2.ZERO
 
 
 func _enter_tree() -> void:
@@ -48,6 +53,7 @@ func _ready() -> void:
 	add_child(head)
 	cam = Camera3D.new()
 	cam.near = 0.05
+	cam.fov = 75.0
 	head.add_child(cam)
 	light = SpotLight3D.new()
 	light.spot_range = 16.0
@@ -66,16 +72,19 @@ func _ready() -> void:
 		cam.current = true
 		Game.local_player = self
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+		vm = Viewmodel.new()
+		cam.add_child(vm)
 	else:
 		light.visible = false
-		var mi := MeshInstance3D.new()
-		var cm := CapsuleMesh.new()
-		cm.radius = 0.35
-		cm.height = 1.8
-		cm.material = Util.mat(Color(0.2, 0.4, 0.8))
-		mi.mesh = cm
-		mi.position.y = 0.9
-		add_child(mi)
+		rig = HumanRig.new()
+		add_child(rig)
+		rig.build(SUIT_COLORS[absi(str(name).to_int()) % 4])
+		var lbl := Label3D.new()
+		lbl.text = display_name
+		lbl.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+		lbl.pixel_size = 0.005
+		lbl.position = Vector3(0, 2.0, 0)
+		add_child(lbl)
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -84,16 +93,14 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseMotion:
 		if not Game.touch_mode and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 			apply_look(event.relative)
-	elif event.is_action_pressed("crouch") and not hidden:
-		crouch_on = not crouch_on
-		crawl_on = false
-	elif event.is_action_pressed("crawl") and not hidden:
-		crawl_on = not crawl_on
-		crouch_on = false
+	elif event.is_action_pressed("crouch"):
+		do_crouch()
+	elif event.is_action_pressed("crawl"):
+		do_crawl()
 	elif event.is_action_pressed("flashlight"):
-		light.visible = not light.visible
+		do_flashlight()
 	elif event.is_action_pressed("interact"):
-		_toggle_hide()
+		do_interact()
 	elif event.is_action_pressed("ui_cancel"):
 		if Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 			Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
@@ -101,15 +108,37 @@ func _unhandled_input(event: InputEvent) -> void:
 			Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
 
+# ---- actions (called by keyboard AND by the touch buttons) ------------------
 func apply_look(rel: Vector2) -> void:
 	if not is_multiplayer_authority() or locked or not alive:
 		return
 	rotate_y(-rel.x * MOUSE_SENS)
 	pitch = clampf(pitch - rel.y * MOUSE_SENS, -1.4, 1.4)
 	head.rotation.x = pitch
+	_look_delta += rel
 
 
-func _toggle_hide() -> void:
+func do_crouch() -> void:
+	if locked or not alive or hidden:
+		return
+	crouch_on = not crouch_on
+	crawl_on = false
+
+
+func do_crawl() -> void:
+	if locked or not alive or hidden:
+		return
+	crawl_on = not crawl_on
+	crouch_on = false
+
+
+func do_flashlight() -> void:
+	light.visible = not light.visible
+
+
+func do_interact() -> void:
+	if locked or not alive:
+		return
 	if hidden:
 		hidden = false
 		posture = Posture.CROUCH
@@ -142,7 +171,7 @@ func _physics_process(delta: float) -> void:
 			posture = Posture.CROUCH
 		else:
 			posture = Posture.STAND
-		var dir := (transform.basis * Vector3(input.x, 0.0, input.y)).normalized()
+		var dir := (transform.basis * Vector3(input.x, 0.0, input.y)).normalized() * minf(input.length(), 1.0)
 		var spd: float = SPEEDS[posture]
 		velocity.x = dir.x * spd
 		velocity.z = dir.z * spd
@@ -186,11 +215,40 @@ func _update_body(delta: float) -> void:
 
 
 func _process(delta: float) -> void:
+	if not is_multiplayer_authority():
+		if rig != null:
+			rig.animate(delta, speed_now)
+			var sy := 1.0
+			match posture:
+				Posture.CROUCH: sy = 0.65
+				Posture.CRAWL: sy = 0.4
+				Posture.HIDING: sy = 0.4
+			rig.scale.y = lerpf(rig.scale.y, sy, minf(delta * 6.0, 1.0))
+		return
+	# camera bob + shake
+	var bob := Vector3.ZERO
+	if speed_now > 0.2:
+		_bob_t += delta * speed_now * 2.0
+		bob = Vector3(sin(_bob_t) * 0.015, absf(sin(_bob_t)) * 0.03, 0.0)
+	var sh := Vector3.ZERO
 	if _shake > 0.0:
-		cam.position = Vector3(randf_range(-1, 1), randf_range(-1, 1), 0) * _shake * 0.1
+		sh = Vector3(randf_range(-1, 1), randf_range(-1, 1), 0) * _shake * 0.1
 		_shake = move_toward(_shake, 0.0, delta * 0.8)
-	elif cam.position != Vector3.ZERO:
-		cam.position = Vector3.ZERO
+	cam.position = bob + sh
+	# fear level from the monster's distance / state
+	var m = get_parent().get_node_or_null("Monster")
+	var tgt := 0.0
+	if m != null:
+		tgt = clampf(1.0 - global_position.distance_to(m.global_position) / 18.0, 0.0, 1.0)
+		if m.state == 2 or m.state == 3:
+			tgt = maxf(tgt, 0.75)
+		elif m.state == 5:
+			tgt = maxf(tgt, 0.9)
+	Game.threat = lerpf(Game.threat, tgt, minf(delta * 2.5, 1.0))
+	cam.fov = lerpf(cam.fov, 75.0 + Game.threat * 10.0, minf(delta * 3.0, 1.0))
+	_look_delta = _look_delta.lerp(Vector2.ZERO, minf(delta * 10.0, 1.0))
+	if vm != null:
+		vm.update(delta, speed_now, _look_delta)
 
 
 # ---- called by the monster's kill sequence --------------------------------

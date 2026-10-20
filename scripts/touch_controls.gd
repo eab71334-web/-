@@ -60,9 +60,7 @@ func _down(i: int, pos: Vector2) -> void:
 		if pos.distance_to(b["p"]) <= BTN_R + 10.0:
 			btn_idx[i] = b
 			b["down"] = true
-			_act(b["a"], true)
-			if not b["hold"]:
-				_act(b["a"], false)
+			_press(b["a"], b["hold"])
 			canvas.queue_redraw()
 			return
 	if joy_idx == -1 and pos.x < _size.x * 0.4 and pos.y > _size.y * 0.35:
@@ -116,12 +114,24 @@ func _axis(action: String, v: float) -> void:
 		_act(action, false)
 
 
+func _press(action: String, hold: bool) -> void:
+	if hold:
+		Input.action_press(action)
+	var lp = Game.local_player
+	if lp == null or not is_instance_valid(lp):
+		return
+	match action:
+		"interact": lp.do_interact()
+		"crouch": lp.do_crouch()
+		"crawl": lp.do_crawl()
+		"flashlight": lp.do_flashlight()
+
+
 func _act(action: String, pressed: bool, strength := 1.0) -> void:
-	var e := InputEventAction.new()
-	e.action = action
-	e.pressed = pressed
-	e.strength = strength
-	Input.parse_input_event(e)
+	if pressed:
+		Input.action_press(action, strength)
+	else:
+		Input.action_release(action)
 
 
 func _paint() -> void:

@@ -27,6 +27,7 @@ var wheel_time := 8.0
 var dead_ids: Array = []
 var finished := false
 var local_player: Node = null
+var threat := 0.0         # 0..1 fear level near the monster
 var touch_mode := false   # true on Android/iOS
 
 
@@ -58,6 +59,7 @@ func _reset() -> void:
 	dead_ids.clear()
 	finished = false
 	local_player = null
+	threat = 0.0
 
 
 func restart() -> void:

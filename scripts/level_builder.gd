@@ -66,6 +66,8 @@ static func build(root: Node3D) -> Dictionary:
 	for p in [Vector3(0, 3, 0), Vector3(-10, 3, 14), Vector3(10, 3, 14), Vector3(0, 3, -14)]:
 		_lamp(root, p, Color(0.8, 0.75, 0.6), 0.5)
 
+	_props(root, region)
+
 	return {
 		"region": region,
 		"door": door,
@@ -86,6 +88,8 @@ static func _lamp(parent: Node, pos: Vector3, c: Color, energy: float) -> void:
 	l.light_color = c
 	l.light_energy = energy
 	l.omni_range = 12.0
+	l.add_to_group("lamps")
+	l.set_meta("base", energy)
 	parent.add_child(l)
 
 
@@ -143,3 +147,19 @@ static func _interactable(root: Node, pos: Vector3, step_i: int, hold: float, no
 	l.position.y = 1.0
 	a.add_child(l)
 	root.add_child(a)
+
+
+static func _props(root: Node, region: Node) -> void:
+	for p in [Vector3(-18, 0, -18), Vector3(17.5, 0, -18), Vector3(-18.5, 0, 6.5), Vector3(18.5, 0, -6.5),
+			Vector3(5, 0, -4.5), Vector3(-19, 0, 19), Vector3(19, 0, 19), Vector3(-4, 0, 19)]:
+		Util.barrel(region, p)
+	var pipe := Util.mat(Color(0.08, 0.08, 0.09))
+	for z in [-14.0, -4.0, 4.0, 13.0, 18.0]:
+		Util.mesh(root, Util.cyl(0.12, 40.0), pipe, Vector3(0, 3.2, z), Vector3(0, 0, PI / 2.0))
+	var blood := Util.mat(Color(0.28, 0.015, 0.015))
+	blood.roughness = 0.25
+	for b in [Vector3(-14, 0.02, -6), Vector3(-2, 0.02, 6.5), Vector3(12, 0.02, -2),
+			Vector3(-6, 0.02, 12), Vector3(1, 0.02, -17), Vector3(8, 0.02, 13)]:
+		var q := QuadMesh.new()
+		q.size = Vector2(randf_range(1.2, 2.4), randf_range(1.5, 3.0))
+		Util.mesh(root, q, blood, b, Vector3(-PI / 2.0, randf() * TAU, 0.0))

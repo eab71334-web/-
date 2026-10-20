@@ -1,6 +1,22 @@
 extends CanvasLayer
 class_name Hud
 
+const FX_SHADER := """
+shader_type canvas_item;
+uniform float threat = 0.0;
+uniform float pulse = 0.0;
+float hash(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
+void fragment() {
+	vec2 uv = UV - 0.5;
+	float vig = smoothstep(0.3, 0.9, length(uv * vec2(1.0, 0.8)));
+	float g = hash(UV * vec2(1280.0, 720.0) + floor(TIME * 24.0));
+	vec3 col = vec3(0.35, 0.0, 0.0) * threat * (0.4 + 0.6 * pulse);
+	float a = vig * (0.5 + 0.45 * threat) + (g - 0.5) * 0.07 + threat * 0.08 * pulse;
+	COLOR = vec4(col, clamp(a, 0.0, 0.95));
+}
+"""
+
+
 var prompt: Label
 var objective: Label
 var subtitle: Label
@@ -12,6 +28,7 @@ var end_panel: PanelContainer
 var end_label: Label
 var restart_btn: Button
 var _sub_t := 0.0
+var fx_mat: ShaderMaterial
 
 
 func _ready() -> void:
@@ -20,6 +37,16 @@ func _ready() -> void:
 	root.set_anchors_preset(Control.PRESET_FULL_RECT)
 	root.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(root)
+
+	var fx := ColorRect.new()
+	fx.set_anchors_preset(Control.PRESET_FULL_RECT)
+	fx.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var sh := Shader.new()
+	sh.code = FX_SHADER
+	fx_mat = ShaderMaterial.new()
+	fx_mat.shader = sh
+	fx.material = fx_mat
+	root.add_child(fx)
 
 	_mk(root, 0.5, -24, 28).text = "·"
 	prompt = _mk(root, 0.8, 0, 22)
@@ -125,6 +152,8 @@ func _show_end(text: String, with_button: bool) -> void:
 
 func _process(delta: float) -> void:
 	_sub_t -= delta
+	fx_mat.set_shader_parameter("threat", Game.threat)
+	fx_mat.set_shader_parameter("pulse", 0.5 + 0.5 * sin(Time.get_ticks_msec() / 1000.0 * (4.0 + Game.threat * 8.0)))
 	if _sub_t <= 0.0:
 		subtitle.text = ""
 	var lp = Game.local_player

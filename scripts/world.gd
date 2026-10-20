@@ -1,8 +1,9 @@
 extends Node3D
-## Game scene root: builds level, spawns players + monster, shows HUD.
+## Game scene root: builds level, spawns players + monster, atmosphere, HUD.
 
 var info: Dictionary
 var door: Node
+var heart: AudioStreamPlayer
 
 
 func _ready() -> void:
@@ -11,6 +12,7 @@ func _ready() -> void:
 	info = LevelBuilder.build(self)
 	door = info["door"]
 	_add_environment()
+	_add_audio()
 	_spawn_players()
 	add_child(Hud.new())
 	Game.touch_mode = OS.has_feature("mobile")
@@ -48,10 +50,47 @@ func _add_environment() -> void:
 	env.ambient_light_energy = 0.6
 	env.fog_enabled = true
 	env.fog_light_color = Color(0.02, 0.02, 0.03)
-	env.fog_density = 0.04
+	env.fog_density = 0.045
+	env.tonemap_mode = Environment.TONE_MAPPER_FILMIC
+	env.glow_enabled = true
+	env.glow_intensity = 0.7
+	env.adjustment_enabled = true
+	env.adjustment_contrast = 1.15
+	env.adjustment_saturation = 0.75
 	var we := WorldEnvironment.new()
 	we.environment = env
 	add_child(we)
+
+
+func _add_audio() -> void:
+	var drone := AudioStreamPlayer.new()
+	drone.stream = ProcAudio.get_sound("drone")
+	drone.volume_db = -12.0
+	add_child(drone)
+	drone.play()
+	heart = AudioStreamPlayer.new()
+	heart.stream = ProcAudio.get_sound("heart")
+	heart.volume_db = -60.0
+	add_child(heart)
+	heart.play()
+
+
+func _process(delta: float) -> void:
+	heart.volume_db = lerpf(-60.0, -3.0, Game.threat)
+	heart.pitch_scale = 0.9 + Game.threat * 0.9
+	# lights flicker / die more the closer the monster is
+	var chaos := 0.05 + Game.threat * 0.5
+	for l in get_tree().get_nodes_in_group("lamps"):
+		var base: float = l.get_meta("base")
+		var dead: float = l.get_meta("dead", 0.0)
+		if dead <= 0.0 and randf() < chaos * delta * 4.0:
+			dead = randf_range(0.05, 0.3)
+		if dead > 0.0:
+			dead -= delta
+			l.light_energy = base * randf_range(0.0, 0.25)
+		else:
+			l.light_energy = lerpf(l.light_energy, base, minf(delta * 10.0, 1.0))
+		l.set_meta("dead", dead)
 
 
 func _on_objective(_t: String) -> void:

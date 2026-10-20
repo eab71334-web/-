@@ -33,6 +33,11 @@ var current_zone: HideZone = null
 var confront_noise := 0.0
 var confront_victim: Player = null
 var name_cd := 15.0
+var rig: MonsterRig
+var breath: AudioStreamPlayer3D
+var step_snd: AudioStreamPlayer3D
+var _last_pos := Vector3.ZERO
+var _speed_s := 0.0
 
 
 func _ready() -> void:
@@ -45,34 +50,28 @@ func _ready() -> void:
 	cs.shape = cap
 	cs.position.y = 1.1
 	add_child(cs)
-	var body := MeshInstance3D.new()
-	var bm := CapsuleMesh.new()
-	bm.radius = 0.5
-	bm.height = 2.2
-	bm.material = Util.mat(Color(0.02, 0.02, 0.03))
-	body.mesh = bm
-	body.position.y = 1.1
-	add_child(body)
+	rig = MonsterRig.new()
+	add_child(rig)
 	eyes = Node3D.new()
-	eyes.position = Vector3(0, 1.9, -0.35)
+	eyes.position = Vector3(0, 2.0, -0.3)
 	add_child(eyes)
-	for x in [-0.15, 0.15]:
-		var e := MeshInstance3D.new()
-		var sm := SphereMesh.new()
-		sm.radius = 0.06
-		sm.height = 0.12
-		sm.material = Util.mat(Color(1, 0.05, 0.05), true)
-		e.mesh = sm
-		e.position = Vector3(x, 0, 0)
-		eyes.add_child(e)
-	var glow := OmniLight3D.new()
-	glow.light_color = Color(1, 0.1, 0.1)
-	glow.light_energy = 0.4
-	glow.omni_range = 4.0
-	eyes.add_child(glow)
+	breath = AudioStreamPlayer3D.new()
+	breath.stream = ProcAudio.get_sound("breath")
+	breath.unit_size = 5.0
+	breath.max_distance = 30.0
+	breath.volume_db = -4.0
+	add_child(breath)
+	breath.play()
+	step_snd = AudioStreamPlayer3D.new()
+	step_snd.stream = ProcAudio.get_sound("thud")
+	step_snd.unit_size = 8.0
+	step_snd.max_distance = 35.0
+	step_snd.volume_db = 2.0
+	add_child(step_snd)
+	rig.footstep.connect(_on_footstep)
 
 	var cfg := SceneReplicationConfig.new()
-	for prop in [":position", ":rotation"]:
+	for prop in [":position", ":rotation", ":state"]:
 		cfg.add_property(NodePath(prop))
 	var sync := MultiplayerSynchronizer.new()
 	sync.replication_config = cfg
@@ -436,6 +435,7 @@ func play_kill(victim_id: int, kind: String, seed_val: int) -> void:
 		return
 	state = State.KILLING
 	Game.confrontation.emit(victim_id, false)
+	_sting()
 	v.on_killed_start()
 	var rng := RandomNumberGenerator.new()
 	rng.seed = seed_val
@@ -533,3 +533,28 @@ func _resume() -> void:
 		position.y = 0.0
 		_set_state(State.PATROL)
 		_pick_patrol()
+
+
+# ------------------------------------------------------------------ look & sound
+func _process(delta: float) -> void:
+	if rig == null:
+		return
+	var flat := Vector3(global_position.x - _last_pos.x, 0.0, global_position.z - _last_pos.z)
+	_last_pos = global_position
+	_speed_s = lerpf(_speed_s, minf(flat.length() / maxf(delta, 0.001), 7.0), minf(delta * 8.0, 1.0))
+	rig.animate(delta, _speed_s, state, Time.get_ticks_msec() / 1000.0)
+	breath.pitch_scale = 1.4 if state == State.CHASE else 0.9
+
+
+func _on_footstep() -> void:
+	step_snd.pitch_scale = randf_range(0.8, 1.2)
+	step_snd.play()
+
+
+func _sting() -> void:
+	var p := AudioStreamPlayer.new()
+	p.stream = ProcAudio.get_sound("sting")
+	p.volume_db = 2.0
+	add_child(p)
+	p.play()
+	p.finished.connect(p.queue_free)
