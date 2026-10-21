@@ -67,6 +67,9 @@ static func build(root: Node3D) -> Dictionary:
 		_lamp(root, p, Color(0.8, 0.75, 0.6), 0.5)
 
 	_props(root, region)
+	var note_spots := [Vector3(-14, 0.1, 19), Vector3(14, 0.1, 19), Vector3(-4, 0.1, 0), Vector3(9, 0.1, -15), Vector3(3, 0.1, -17.5)]
+	for i in note_spots.size():
+		_note(root, note_spots[i], i)
 
 	return {
 		"region": region,
@@ -163,3 +166,22 @@ static func _props(root: Node, region: Node) -> void:
 		var q := QuadMesh.new()
 		q.size = Vector2(randf_range(1.2, 2.4), randf_range(1.5, 3.0))
 		Util.mesh(root, q, blood, b, Vector3(-PI / 2.0, randf() * TAU, 0.0))
+
+
+static func _note(root: Node, pos: Vector3, idx: int) -> void:
+	var n := LoreNote.new()
+	n.idx = idx
+	n.position = pos
+	var cs := CollisionShape3D.new()
+	var bs := BoxShape3D.new()
+	bs.size = Vector3(2.4, 2.0, 2.4)
+	cs.shape = bs
+	n.add_child(cs)
+	Util.mesh(n, Util.bmesh(Vector3(0.32, 0.015, 0.42)), Util.mat(Color(0.9, 0.85, 0.65), true), Vector3.ZERO, Vector3(0, randf() * TAU, 0))
+	var l := OmniLight3D.new()
+	l.light_color = Color(1, 0.9, 0.6)
+	l.light_energy = 0.35
+	l.omni_range = 3.0
+	l.position.y = 0.4
+	n.add_child(l)
+	root.add_child(n)

@@ -16,7 +16,10 @@ func _ready() -> void:
 	_add_environment()
 	_add_audio()
 	_spawn_players()
-	add_child(Hud.new())
+	var hud := Hud.new()
+	add_child(hud)
+	hud.title_card("الليلة %d" % Game.night, "٣:٠٧ فجراً")
+	Game.game_won.connect(_on_won)
 	Game.touch_mode = OS.has_feature("mobile")
 	if Game.touch_mode:
 		add_child(TouchControls.new())
@@ -27,9 +30,14 @@ func _ready() -> void:
 	await get_tree().physics_frame
 	var m := Monster.new()
 	m.name = "Monster"
-	m.position = Vector3(0, 0, -13)
+	m.position = Vector3(0, 0, -8)
 	m.patrol_points = info["patrol_points"]
 	add_child(m)
+	m.rotation.y = PI                                        # faces you: you SEE him at the start
+	m.ignore_until = Time.get_ticks_msec() + 10000           # 10 s grace: he will not spot you yet
+	m.hold_t = 5.0
+	m.dest = m.position
+	m._set_state(0)
 
 
 func _spawn_players() -> void:
@@ -123,3 +131,9 @@ func _boom() -> void:
 	add_child(p)
 	p.play()
 	p.finished.connect(p.queue_free)
+
+
+func _on_won() -> void:
+	Game.ending_kind = "true" if Game.notes_found.size() >= Game.NOTES.size() else "normal"
+	await get_tree().create_timer(1.2).timeout
+	get_tree().change_scene_to_file("res://scenes/ending.tscn")

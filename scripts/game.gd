@@ -8,6 +8,7 @@ signal confrontation(victim_id: int, on: bool)
 signal fade_requested
 signal game_over
 signal game_won
+signal note_opened(idx: int)
 signal speech_heard(pid: int, dur: float, peak: float, text: String)
 
 const STARE_TIME := 7.0   # the "7 second rule"
@@ -33,6 +34,16 @@ var ai_url := AI_URL_DEFAULT
 var ai_model := "qwen2.5:3b"   # used with a local OpenAI-compatible server (Ollama)
 var ai_status := "AI: off"
 var mind_status := ""
+var notes_found: Array = []
+var near_note := -1
+var ending_kind := "normal"
+const NOTES := [
+	{"t": "سجل الدكتور سالم — ١٢ مارس ١٩٨٧", "b": "بنيتُ التسلسل في القبو: المولد أولاً، ثم ذراع الطوارئ، ثم العجلة. أي خطأ في الترتيب يُبقي الباب مغلقاً إلى الأبد.\nالمريض ١٣ لا يصمت. يناديني باسمي قبل أن أعرّفه بنفسي… وأنا لم أخبره بشيء."},
+	{"t": "تقرير الأمن — الليلة ٣:٠٧", "b": "انقطع النور في تمام الثالثة وسبع دقائق. سمعنا ثلاث طرقات من الغرفة B-13.\nثم ناداني الحارس باسمي من الداخل… والحارس كان واقفاً بجانبي."},
+	{"t": "أمر إداري — سرّي للغاية", "b": "يُغلق القبو نهائياً. لا يُذكر المريض ١٣ في أي وثيقة. من يسأل عنه يُحوَّل إلى الشرطة. تُحرق الأرشيفات قبل الفجر.\n— الإدارة"},
+	{"t": "ورقة ممزقة بخط المريض ١٣", "b": "لستُ غاضباً… أنا وحيد.\nكل من يفتح الباب يأخذ صوتي ويخرج، وأبقى أنا. في كل ليلة أتعلّم عنكم أكثر.\nهذه المرة سأتعلّم كيف أخرج أنا."},
+	{"t": "ملاحظة بخط يدك", "b": "يا {name}… لا تُغلق الباب خلفك.\nهذا ما فعلتَه في الليلة السابقة، وهذا ما سيفعله هو بصوتك في الليلة القادمة.\nأنت لست أول من فتح B-13… أنت الأخير."},
+]
 var blackout_until := 0
 var chaos_until := 0
 var silence_until := 0
@@ -163,6 +174,7 @@ func load_settings() -> void:
 	ai_url = c.get_value("ai", "url", AI_URL_DEFAULT)
 	ai_model = c.get_value("ai", "model", ai_model)
 	night = c.get_value("progress", "night", 1)
+	notes_found = c.get_value("progress", "notes", [])
 
 
 func save_settings() -> void:
@@ -173,6 +185,7 @@ func save_settings() -> void:
 	c.set_value("ai", "url", ai_url)
 	c.set_value("ai", "model", ai_model)
 	c.set_value("progress", "night", night)
+	c.set_value("progress", "notes", notes_found)
 	c.save("user://settings.cfg")
 
 
@@ -194,3 +207,51 @@ func say_to_monster(text: String) -> void:
 		return
 	subtitle.emit("أنت: " + text)
 	fire("report_speech", [my_id(), 1.5, 0.4, text])
+
+
+# ---- story ----
+func start_story() -> void:
+	get_tree().change_scene_to_file("res://scenes/intro.tscn")
+
+
+func note_title(i: int) -> String:
+	return str(NOTES[i]["t"])
+
+
+func note_body(i: int) -> String:
+	return str(NOTES[i]["b"]).replace("{name}", player_name)
+
+
+func open_note(i: int) -> void:
+	if not notes_found.has(i):
+		notes_found.append(i)
+		save_settings()
+	note_opened.emit(i)
+
+
+## Shareable "case file" card: what the Shadow learned about you.
+func case_text() -> String:
+	var lines: Array = ["ملف القضية B-13", "", "الاسم: %s" % player_name, "الليلة: %d" % night,
+		"الوثائق المكتشفة: %d/%d" % [notes_found.size(), NOTES.size()]]
+	if FileAccess.file_exists("user://shadow_mind.json"):
+		var f := FileAccess.open("user://shadow_mind.json", FileAccess.READ)
+		var j = JSON.parse_string(f.get_as_text()) if f != null else null
+		if j is Dictionary:
+			lines.append("ليالٍ لعبتها: %d  |  مرات موتك: %d  |  نجاتك: %d" % [int(j.get("games", 0)), int(j.get("deaths", 0)), int(j.get("wins", 0))])
+			lines.append("")
+			lines.append("ما تعلّمه الظل عنك:")
+			if float(j.get("run_ratio", 0.0)) > 0.4:
+				lines.append("• تركض كثيراً")
+			if float(j.get("stare_break", 0.5)) < 0.3:
+				lines.append("• تثبت جيداً تحت نظرته")
+			var best := -1
+			var bv := 0.0
+			var zu = j.get("zone_use", {})
+			if zu is Dictionary:
+				for k in zu:
+					if float(zu[k]) > bv:
+						bv = float(zu[k])
+						best = int(k)
+			if best >= 0 and best < ZONE_NAMES.size():
+				lines.append("• تختبئ غالباً في " + ZONE_NAMES[best])
+	return "\n".join(lines)

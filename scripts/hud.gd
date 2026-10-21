@@ -33,6 +33,9 @@ var dbg: Label
 var chat_btn: Button
 var chat_panel: PanelContainer
 var chat_edit: LineEdit
+var note_panel: PanelContainer
+var note_title: Label
+var note_body: Label
 
 
 func _ready() -> void:
@@ -41,6 +44,7 @@ func _ready() -> void:
 	root.set_anchors_preset(Control.PRESET_FULL_RECT)
 	root.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(root)
+	root.theme = UITheme.make()
 
 	var fx := ColorRect.new()
 	fx.set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -80,13 +84,47 @@ func _ready() -> void:
 	hb.add_child(sb)
 	root.add_child(chat_panel)
 
+	note_panel = PanelContainer.new()
+	note_panel.anchor_left = 0.15
+	note_panel.anchor_right = 0.85
+	note_panel.anchor_top = 0.12
+	note_panel.anchor_bottom = 0.88
+	note_panel.visible = false
+	var nv := VBoxContainer.new()
+	nv.add_theme_constant_override("separation", 14)
+	note_panel.add_child(nv)
+	note_title = Label.new()
+	note_title.add_theme_font_size_override("font_size", 28)
+	note_title.add_theme_color_override("font_color", Color(0.85, 0.12, 0.12))
+	note_title.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	nv.add_child(note_title)
+	note_body = Label.new()
+	note_body.add_theme_font_size_override("font_size", 26)
+	note_body.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	note_body.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	nv.add_child(note_body)
+	var nb := Button.new()
+	nb.text = "إغلاق"
+	nb.pressed.connect(_close_note)
+	nv.add_child(nb)
+	root.add_child(note_panel)
+
 	_mk(root, 0.5, -24, 28).text = "·"
 	prompt = _mk(root, 0.8, 0, 22)
 	dbg = _mk(root, 0.93, 0, 14)
 	dbg.modulate = Color(1, 1, 1, 0.5)
+	var strip := ColorRect.new()
+	strip.color = Color(0, 0, 0, 0.45)
+	strip.anchor_right = 1.0
+	strip.offset_bottom = 56
+	strip.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	root.add_child(strip)
 	objective = _mk(root, 0.0, 12, 20)
 	subtitle = _mk(root, 0.68, 0, 34)
 	subtitle.add_theme_color_override("font_color", Color(0.8, 0.05, 0.05))
+	for l in [prompt, objective, subtitle]:
+		l.add_theme_constant_override("outline_size", 6)
+		l.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.95))
 
 	noise_bar = ProgressBar.new()
 	noise_bar.anchor_top = 1.0
@@ -145,9 +183,9 @@ func _ready() -> void:
 		subtitle.text = t
 		_sub_t = 2.5)
 	Game.confrontation.connect(_on_confront)
+	Game.note_opened.connect(_on_note)
 	Game.fade_requested.connect(_on_dead)
 	Game.game_over.connect(func(): _show_end("انتهت اللعبة… قتلك الظل", true))
-	Game.game_won.connect(func(): _show_end("نجوت! لكن الظل يتعلم… الليلة %d أصعب" % Game.night, true))
 
 
 func _mk(root: Control, ay: float, off: float, size: int) -> Label:
@@ -176,7 +214,7 @@ func _on_dead() -> void:
 
 
 func _show_end(text: String, with_button: bool) -> void:
-	end_label.text = text
+	end_label.text = text + "\n\n" + Game.case_text()
 	restart_btn.text = "الليلة التالية" if Game.finished else "حاول مجدداً"
 	end_panel.visible = true
 	restart_btn.visible = with_button and (Game.solo or Game.is_host())
@@ -193,7 +231,7 @@ func _process(delta: float) -> void:
 		subtitle.text = ""
 	var lp = Game.local_player
 	if lp != null and is_instance_valid(lp):
-		dbg.text = "x %.1f  z %.1f   step %d" % [lp.global_position.x, lp.global_position.z, Game.step] + "   " + Game.ai_status + "   " + Game.mind_status
+		dbg.text = "x %.1f  z %.1f   step %d" % [lp.global_position.x, lp.global_position.z, Game.step] + "   " + Game.ai_status + "   " + Game.mind_status + "   M:" + _mon()
 	else:
 		dbg.text = "NO PLAYER"
 	if lp == null or not is_instance_valid(lp) or not lp.alive:
@@ -204,6 +242,8 @@ func _process(delta: float) -> void:
 		prompt.text = "[E] اخرج من المخبأ"
 	elif it != null and it.is_available():
 		prompt.text = it.get_prompt()
+	elif Game.near_note >= 0:
+		prompt.text = "[E] اقرأ الوثيقة"
 	elif lp.in_hide_zone != null:
 		if lp.posture == Player.Posture.CROUCH or lp.posture == Player.Posture.CRAWL:
 			prompt.text = "[E] اختبئ"
@@ -239,3 +279,57 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed("talk") and not chat_edit.has_focus():
 		_toggle_chat()
 		get_viewport().set_input_as_handled()
+
+
+func _mon() -> String:
+	var m = get_parent().get_node_or_null("Monster")
+	if m == null:
+		return "NOT SPAWNED"
+	return "%d @%.0f,%.0f" % [m.state, m.global_position.x, m.global_position.z]
+
+
+func _on_note(i: int) -> void:
+	note_title.text = Game.note_title(i)
+	note_body.text = Game.note_body(i) + "\n\n(%d/%d)" % [Game.notes_found.size(), Game.NOTES.size()]
+	note_body.visible_ratio = 0.0
+	note_panel.visible = true
+	Game.typing = true
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	create_tween().tween_property(note_body, "visible_ratio", 1.0, 0.03 * note_body.text.length())
+
+
+func _close_note() -> void:
+	note_panel.visible = false
+	Game.typing = false
+	if not Game.touch_mode:
+		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+
+
+## Fade-in from black with a big title ("الليلة 1 — 3:07 فجراً").
+func title_card(text: String, subtitle_text: String) -> void:
+	var cover := ColorRect.new()
+	cover.color = Color.BLACK
+	cover.set_anchors_preset(Control.PRESET_FULL_RECT)
+	cover.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(cover)
+	var l := Label.new()
+	l.text = text + "\n" + subtitle_text
+	l.set_anchors_preset(Control.PRESET_FULL_RECT)
+	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	l.add_theme_font_size_override("font_size", 56)
+	l.add_theme_constant_override("outline_size", 10)
+	l.add_theme_color_override("font_outline_color", Color.BLACK)
+	l.add_theme_color_override("font_color", Color(0.85, 0.1, 0.1))
+	l.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	l.modulate.a = 0.0
+	add_child(l)
+	var tw := create_tween()
+	tw.tween_property(l, "modulate:a", 1.0, 1.2)
+	tw.tween_interval(1.8)
+	tw.set_parallel(true)
+	tw.tween_property(l, "modulate:a", 0.0, 1.5)
+	tw.tween_property(cover, "color:a", 0.0, 2.0)
+	tw.set_parallel(false)
+	tw.tween_callback(l.queue_free)
+	tw.tween_callback(cover.queue_free)
