@@ -98,3 +98,7 @@ Android may block plain-http traffic depending on the export template; if so put
 - He only answers sometimes (cooldown + probability by what you said and his mood), may spare you, toy with you (7-second stare), or punish you (chase). Shouting or running mid-conversation = chase. If you speak from far away he just comes to investigate.
 ## Horror tricks & invented movement (`shadow_mind.gd`)
 Blackout + sudden appearance, footsteps behind you, sudden silence then a thud, light-flicker bursts, far whispers, peeking at the end of a corridor. A pacing director builds tension, never repeats the same trick, and learns which tricks make you panic. Each patrol leg he invents a movement style (stalk / crawl on all fours / limp / walk) with random tempo.
+
+## Story: "ملف B-13" (original fiction — written like a case file, NOT real events)
+Menu → **ابدأ القصة**: 3:07 AM phone call → abandoned hospital → lock-picking mini-game on door B-13 → a voice says your name → the Sequence begins. Five documents hide the truth (Dr. Salem's Sequence, patient 13, the cover-up…). Escape normally = hint ending; find all 5 documents = **true ending** (your own phone rings with your name and your voice repeating the opening call: the night loops). The end card ("ملف القضية") lists what the Shadow learned about you — made to be screenshotted/recorded for TikTok/YouTube.
+Cinematics: `cine_base.gd`, `intro.gd`, `ending.gd`, `lockpick.gd`. Menu has a live 3D monster behind the UI, film-grain/vignette shader, themed UI (`ui_theme.gd`).
