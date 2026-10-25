@@ -9,17 +9,40 @@ signal fade_requested
 signal game_over
 signal game_won
 signal note_opened(idx: int)
+signal puzzle_requested(kind: String, station: Node)
+signal final_stare_requested(pid: int)
+signal monster_freeze(secs: float)
+signal door_failed_sig(pid: int)
 signal speech_heard(pid: int, dur: float, peak: float, text: String)
+signal item_added(id: String)
+signal door_opened
 
 const STARE_TIME := 7.0   # the "7 second rule"
-enum Step { GENERATOR, LEVER, WHEEL, EXIT, ESCAPED }
+enum Step { GENERATOR, LEVER, ARCHIVE, MORGUE, WHEEL, EXIT, ESCAPED }
 const OBJECTIVES := [
-	"تسلل إلى غرفة المولد واسحب الذراع (سيصدر ضجيجاً!)",
-	"اذهب إلى غرفة المراقبة واسحب ذراع الطوارئ",
-	"أدِر العجلة الهيدروليكية عند الباب الرئيسي",
-	"اهرب عبر الباب الآن!",
+	"اقرأ وثيقة ترتيب المصاهر، ثم شغّل المولد من لوحة المصاهر (سيصدر ضجيجاً!)",
+	"اعثر على شريط VHS وشاهده على التلفاز، ثم أدخل رمز الطوارئ في غرفة المراقبة",
+	"خذ مفتاح الأرشيف من غرفة المراقبة، افتح البوابة الجنوبية، ثم اضبط الراديو (الكشاف يكشف ما لا تراه العين)",
+	"افتح الخزنة في المشرحة (جنوب شرق الأرشيف) بتاريخ إغلاق الباب: اليوم، الشهر، السنة",
+	"خذ المفتاح، افتح غرفة B-13 (غرب غرفة الخروج) وأجب على الهاتف… ثم لا تتحرك ولا تتكلم",
+	"اهرب إلى الباب الرئيسي وأغلقه خلفك قبل أن يصل!",
 	"نجوت!",
 ]
+const CHAPTERS := {
+	0: ["الفصل الثاني", "التسلسل"],
+	2: ["الفصل الثالث", "الأرشيف"],
+	3: ["الفصل الرابع", "المشرحة"],
+	4: ["الفصل الخامس", "الغرفة B-13"],
+	5: ["الفصل السادس", "الباب"],
+}
+const ITEMS := {
+	"tape": {"name": "شريط VHS", "desc": "نشرة أخبار مسجّلة بتاريخ ١٢/٠٣/١٩٨٧. على الغلاف بخط اليد: ٣:٠٧."},
+	"key_archive": {"name": "مفتاح الأرشيف", "desc": "مفتاح نحاسي ثقيل. عليه نقش صغير: «الأرشيف — الجنوب»."},
+	"key_b13": {"name": "مفتاح B-13", "desc": "مفتاح أحمر باهت. يداك ترتجفان وأنت تمسكه… كأنه يعرفك."},
+}
+const SAFE_CODE := [12, 3, 87]
+const RADIO_FREQ := 97.3
+const RADIO_MSG := "هنا الدكتور سالم… سجّلتُ هذه الرسالة لمن يعثر عليها. رمز الخزنة في المشرحة هو تاريخ اليوم الذي أُغلق فيه الباب: اليوم، ثم الشهر، ثم السنة. وإن سمعتَ صوتي ينادي باسمك… فلستُ أنا."
 
 var player_name := "Player"
 var use_mic := true
@@ -36,13 +59,40 @@ var ai_status := "AI: off"
 var mind_status := ""
 var notes_found: Array = []
 var near_note := -1
+var near_prompt := ""
+var items: Array = []
+var flags: Dictionary = {}
+var resume_pos := Vector3.ZERO
+var has_resume_pos := false
+var has_tape: bool:
+	get:
+		return items.has("tape")
+var alarm := false
+const PHONE_POS := Vector3(-18, 0, -14)
 var ending_kind := "normal"
 const NOTES := [
-	{"t": "سجل الدكتور سالم — ١٢ مارس ١٩٨٧", "b": "بنيتُ التسلسل في القبو: المولد أولاً، ثم ذراع الطوارئ، ثم العجلة. أي خطأ في الترتيب يُبقي الباب مغلقاً إلى الأبد.\nالمريض ١٣ لا يصمت. يناديني باسمي قبل أن أعرّفه بنفسي… وأنا لم أخبره بشيء."},
-	{"t": "تقرير الأمن — الليلة ٣:٠٧", "b": "انقطع النور في تمام الثالثة وسبع دقائق. سمعنا ثلاث طرقات من الغرفة B-13.\nثم ناداني الحارس باسمي من الداخل… والحارس كان واقفاً بجانبي."},
+	{"t": "سجل الدكتور سالم — ١٢ مارس ١٩٨٧", "b": "بنيتُ التسلسل في القبو: المولد أولاً، ثم ذراع الطوارئ، ثم العجلة.\nترتيب لوحة المصاهر: الأحمر… ثم الأزرق… ثم الأخضر. الأصفر فخّ.\nالمريض ١٣ لا يصمت. يناديني باسمي قبل أن أعرّفه بنفسي… وأنا لم أخبره بشيء."},
+	{"t": "تقرير الأمن — الليلة ٣:٠٧", "b": "انقطع النور في تمام الثالثة وسبع دقائق. سمعنا ثلاث طرقات من الغرفة B-13.\nرمز لوحة الطوارئ: رقم المريض ثم رقم غرفته (أربع خانات). التفاصيل في نشرة الأخبار المسجّلة على الشريط.\nثم ناداني الحارس باسمي من الداخل… والحارس كان واقفاً بجانبي."},
 	{"t": "أمر إداري — سرّي للغاية", "b": "يُغلق القبو نهائياً. لا يُذكر المريض ١٣ في أي وثيقة. من يسأل عنه يُحوَّل إلى الشرطة. تُحرق الأرشيفات قبل الفجر.\n— الإدارة"},
-	{"t": "ورقة ممزقة بخط المريض ١٣", "b": "لستُ غاضباً… أنا وحيد.\nكل من يفتح الباب يأخذ صوتي ويخرج، وأبقى أنا. في كل ليلة أتعلّم عنكم أكثر.\nهذه المرة سأتعلّم كيف أخرج أنا."},
+	{"t": "ورقة ممزقة بخط المريض ١٣", "b": "لستُ غاضباً… أنا وحيد.\nكل من يفتح الباب يأخذ صوتي ويخرج، وأبقى أنا. في كل ليلة أتعلّم عنكم أكثر.\nهذه المرة سأتعلّم كيف أخرج أنا.\nوإن رنّ الهاتف في غرفتي فأجب… ثم لا تتحرك ولا تتنفس. هو لا يرى إلا من يتحرك، ولا يسمع إلا من يتكلم."},
 	{"t": "ملاحظة بخط يدك", "b": "يا {name}… لا تُغلق الباب خلفك.\nهذا ما فعلتَه في الليلة السابقة، وهذا ما سيفعله هو بصوتك في الليلة القادمة.\nأنت لست أول من فتح B-13… أنت الأخير."},
+	{"t": "محضر الشرطة رقم ٨٧/٣١٢", "b": "عُثر على باب B-13 ملحوماً من الخارج وعليه ثلاثة أقفال بترتيب غريب. استُدعي مفتّح أقفال ليلاً ففتحه… ثم اختفى هو أيضاً. اسمه مشطوب بالحبر الأسود في السجل.\nتقرر طيّ القضية.\n— العقيد ن."},
+	{"t": "تفريغ شريط الدكتور سالم", "b": "اكتشفتُ أن الباب لا يُحبس به المريض… بل يُحبس به ما بداخله. المريض ١٣ لم يكن مريضاً قط؛ كان أول من فتح الباب.\nوكل من يفتحه بعده يترك له شيئاً: نوره… ثم ذاكرته… ثم صوته."},
+	{"t": "سجل المشرحة", "b": "الدرج ١٣ لا يحتوي جثة. يُفتح كل ليلة عند ٣:٠٧ من الداخل.\nوجدنا بداخله ثلاثة عشر مفتاحاً… على كل مفتاح اسم مفتّح أقفال."},
+]
+const KEYPAD_CODE := "1307"
+const FUSE_ORDER := [0, 1, 2]
+const NEWS_TICKER := "   عاجل • حادثة غامضة في مستشفى الرحمة • السلطات تغلق القبو • الشرطة: لا تقتربوا من المبنى بعد منتصف الليل • وزارة الصحة تنفي وجود تجارب •   "
+const NEWS_INTRO := [
+	"مساء الخير. نبدأ نشرتنا من مستشفى الرحمة، حيث أعلنت السلطات إغلاق القبو الجنوبي نهائياً.",
+	"الشرطة تحقق فيما جرى عند الثالثة وسبع دقائق فجراً… ولا تعليق رسمي حتى الآن.",
+	"ويحذّر المتحدث الرسمي المواطنين: لا تقتربوا من المبنى بعد منتصف الليل.",
+]
+const NEWS_LINES := [
+	"مساء الخير. من مستشفى الرحمة: الشرطة تؤكد أن المريض رقم ثلاثة عشر كان محتجزاً في الغرفة رقم صفر سبعة حين انقطع التيار عند الثالثة وسبع دقائق.",
+	"الطبيب المسؤول سالم الحارثي أوقفته النيابة العامة على ذمة التحقيق، ووزارة الصحة تنفي وجود أي تجارب.",
+	"شهود يقولون إن الحارس خرج من القبو وهو يردد اسمه… ثم اختفى.",
+	"وفي خبر عاجل: السلطات تقرر إحراق الأرشيف وإغلاق الباب بالخرسانة.",
 ]
 var blackout_until := 0
 var chaos_until := 0
@@ -51,7 +101,7 @@ var mute_mic_until := 0
 var typing := false
 var night := 1            # endless: each escape makes the next night harder
 const ZONE_NAMES := ["القاعة الغربية", "القاعة الشرقية", "وسط القاعة", "الجهة الشرقية", "غرفة الخروج الغربية", "غرفة الخروج الشرقية", "غرفة المولد", "غرفة المراقبة", "زاوية المولد"]
-const OBJ_POS := [Vector3(-17.5, 0, 17), Vector3(17.5, 0, 17), Vector3(0, 0, -18)]
+const OBJ_POS := [Vector3(-17.5, 0, 17), Vector3(17.5, 0, 17), Vector3(-16, 0, 29), Vector3(14, 0, 42), Vector3(-18, 0, -14)]
 var local_player: Node = null
 var threat := 0.0         # 0..1 fear level near the monster
 var touch_mode := false   # true on Android/iOS
@@ -61,7 +111,7 @@ func _ready() -> void:
 	load_settings()
 	var keys := {
 		"move_forward": KEY_W, "move_back": KEY_S, "move_left": KEY_A, "move_right": KEY_D,
-		"sprint": KEY_SHIFT, "crouch": KEY_C, "crawl": KEY_Z, "interact": KEY_E, "flashlight": KEY_F, "talk": KEY_T,
+		"sprint": KEY_SHIFT, "crouch": KEY_C, "crawl": KEY_Z, "interact": KEY_E, "flashlight": KEY_F, "talk": KEY_T, "inventory": KEY_I,
 	}
 	for action in keys:
 		if not InputMap.has_action(action):
@@ -82,11 +132,13 @@ func start_game(is_solo: bool) -> void:
 
 
 func _reset() -> void:
-	step = Step.GENERATOR
 	dead_ids.clear()
 	finished = false
 	local_player = null
 	threat = 0.0
+	alarm = false
+	near_prompt = ""
+	near_note = -1
 	blackout_until = 0
 	chaos_until = 0
 	silence_until = 0
@@ -95,6 +147,7 @@ func _reset() -> void:
 
 func restart() -> void:
 	if solo:
+		load_run()          # back to the last checkpoint: the story is one continuous run
 		start_game(true)
 	elif multiplayer.is_server():
 		_restart_all.rpc()
@@ -115,8 +168,11 @@ func complete_step(s: int) -> void:
 	if step == Step.ESCAPED:
 		finished = true
 		night += 1
+		clear_run()
 		save_settings()
 		game_won.emit()
+	else:
+		save_run()
 
 
 @rpc("any_peer", "call_local", "unreliable")
@@ -179,6 +235,7 @@ func load_settings() -> void:
 
 func save_settings() -> void:
 	var c := ConfigFile.new()
+	c.load("user://settings.cfg")
 	c.set_value("player", "name", player_name)
 	c.set_value("player", "mic", use_mic)
 	c.set_value("ai", "key", ai_key)
@@ -255,3 +312,105 @@ func case_text() -> String:
 			if best >= 0 and best < ZONE_NAMES.size():
 				lines.append("• تختبئ غالباً في " + ZONE_NAMES[best])
 	return "\n".join(lines)
+
+
+func open_puzzle(kind: String, station: Node) -> void:
+	puzzle_requested.emit(kind, station)
+
+
+# ---- finale RPCs ----
+@rpc("any_peer", "call_local", "reliable")
+func start_final(pid: int) -> void:
+	final_stare_requested.emit(pid)
+
+
+@rpc("any_peer", "call_local", "reliable")
+func freeze_monster(secs: float) -> void:
+	monster_freeze.emit(secs)
+
+
+@rpc("any_peer", "call_local", "reliable")
+func door_failed(pid: int) -> void:
+	door_failed_sig.emit(pid)
+
+
+@rpc("any_peer", "call_local", "reliable")
+func set_blackout(secs: float) -> void:
+	blackout_until = Time.get_ticks_msec() + int(secs * 1000.0)
+
+
+# ---- inventory, flags, checkpoints (one continuous run) ----
+func has_item(id: String) -> bool:
+	return items.has(id)
+
+
+func item_name(id: String) -> String:
+	return str(ITEMS.get(id, {}).get("name", id))
+
+
+func add_item(id: String) -> void:
+	if items.has(id):
+		return
+	items.append(id)
+	item_added.emit(id)
+	save_run()
+
+
+func has_flag(k: String) -> bool:
+	return flags.has(k)
+
+
+func set_flag(k: String) -> void:
+	flags[k] = true
+	save_run()
+
+
+func hand_reach() -> void:
+	var lp = local_player
+	if lp != null and is_instance_valid(lp) and lp.vm != null:
+		lp.vm.reach()
+
+
+func has_saved_run() -> bool:
+	var c := ConfigFile.new()
+	return c.load("user://settings.cfg") == OK and c.has_section_key("run", "step")
+
+
+func save_run() -> void:
+	var c := ConfigFile.new()
+	c.load("user://settings.cfg")
+	c.set_value("run", "step", step)
+	c.set_value("run", "items", items)
+	c.set_value("run", "flags", flags)
+	var lp = local_player
+	if lp != null and is_instance_valid(lp):
+		c.set_value("run", "pos", lp.global_position)
+	c.save("user://settings.cfg")
+
+
+func load_run() -> bool:
+	var c := ConfigFile.new()
+	if c.load("user://settings.cfg") != OK or not c.has_section_key("run", "step"):
+		return false
+	step = int(c.get_value("run", "step", 0))
+	items = c.get_value("run", "items", [])
+	flags = c.get_value("run", "flags", {})
+	if c.has_section_key("run", "pos"):
+		resume_pos = c.get_value("run", "pos", Vector3.ZERO)
+		has_resume_pos = true
+	return true
+
+
+func clear_run() -> void:
+	step = Step.GENERATOR
+	items = []
+	flags = {}
+	has_resume_pos = false
+	var c := ConfigFile.new()
+	if c.load("user://settings.cfg") == OK:
+		c.erase_section("run")
+		c.save("user://settings.cfg")
+
+
+func new_run() -> void:
+	clear_run()

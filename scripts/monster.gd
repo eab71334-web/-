@@ -36,6 +36,7 @@ var name_cd := 15.0
 var brain: AIBrain
 var mind: ShadowMind
 var hold_t := 0.0
+var script_mode := false     # true while a scripted scene (finale / door) drives him
 var style := "walk"
 var style_speed := 1.0
 var talk_t := 0.0
@@ -108,12 +109,14 @@ func _ready() -> void:
 	Game.noise_made.connect(_on_noise)
 	Game.objective_changed.connect(_on_objective)
 	Game.speech_heard.connect(_on_speech)
+	Game.monster_freeze.connect(_on_freeze)
+	Game.door_failed_sig.connect(_on_door_failed)
 	_pick_patrol()
 
 
 # ------------------------------------------------------------------ main loop
 func _physics_process(delta: float) -> void:
-	if not Game.is_host() or state == State.KILLING or Game.finished:
+	if not Game.is_host() or state == State.KILLING or Game.finished or script_mode:
 		return
 	_learn(delta)
 	if state in [State.PATROL, State.INVESTIGATE, State.SEARCH_HIDE]:
@@ -455,7 +458,7 @@ func _find_player(id: int) -> Player:
 
 
 # ------------------------------------------------------------------ dynamic kills
-func _start_kill(victim: Player) -> void:
+func _start_kill(victim: Player, force_kind := "") -> void:
 	state = State.KILLING
 	brain.remember("I caught and killed %s" % victim.display_name)
 	var kind := "intercept_slam"
@@ -463,6 +466,8 @@ func _start_kill(victim: Player) -> void:
 		kind = ["crush_crate", "reach_through"].pick_random()
 	elif victim.posture == Player.Posture.CRAWL:
 		kind = "stomp_lift"
+	if force_kind != "":
+		kind = force_kind
 	mind.reward(3.0)
 	mind.on_kill(victim, kind)
 	_all("play_kill", [str(victim.name).to_int(), kind, randi()])
@@ -803,3 +808,16 @@ func fx_steps(pid: int) -> void:
 		snd.play()
 		await get_tree().create_timer(0.55).timeout
 	snd.queue_free()
+
+
+func _on_freeze(secs: float) -> void:
+	script_mode = true
+	state = State.STARE
+	get_tree().create_timer(secs).timeout.connect(func(): script_mode = false)
+
+
+func _on_door_failed(pid: int) -> void:
+	var p := _find_player(pid)
+	if p != null:
+		script_mode = false
+		_start_kill(p, "reach_through")

@@ -21,6 +21,13 @@ func _finish() -> void:
 func _run() -> void:
 	var n := Game.player_name
 	await _wait(1.2)
+	var clip := NewsClip.new()
+	clip.lines = Game.NEWS_INTRO
+	clip.ticker_text = Game.NEWS_TICKER
+	add_child(clip)
+	await clip.finished
+	_flash(0.2)
+	await _wait(1.0)
 	_sfx("ring")
 	await _say("٣:٠٧ فجراً", 3.2, 64)
 	sub.text = "متصل مجهول"

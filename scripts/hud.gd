@@ -31,11 +31,17 @@ var _sub_t := 0.0
 var fx_mat: ShaderMaterial
 var dbg: Label
 var chat_btn: Button
+var inv_btn: Button
+var bar_top: ColorRect
+var bar_bot: ColorRect
+var cctv_box: Control
+var cctv_label: Label
 var chat_panel: PanelContainer
 var chat_edit: LineEdit
 var note_panel: PanelContainer
 var note_title: Label
 var note_body: Label
+var puzzle_open := false
 
 
 func _ready() -> void:
@@ -64,6 +70,14 @@ func _ready() -> void:
 	chat_btn.offset_bottom = 108
 	chat_btn.pressed.connect(_toggle_chat)
 	root.add_child(chat_btn)
+	inv_btn = Button.new()
+	inv_btn.text = "الأغراض (I)"
+	inv_btn.offset_left = 16
+	inv_btn.offset_top = 116
+	inv_btn.offset_right = 170
+	inv_btn.offset_bottom = 160
+	inv_btn.pressed.connect(_open_inventory)
+	root.add_child(inv_btn)
 	chat_panel = PanelContainer.new()
 	chat_panel.anchor_left = 0.2
 	chat_panel.anchor_right = 0.8
@@ -108,6 +122,40 @@ func _ready() -> void:
 	nb.pressed.connect(_close_note)
 	nv.add_child(nb)
 	root.add_child(note_panel)
+
+	cctv_box = Control.new()
+	cctv_box.set_anchors_preset(Control.PRESET_FULL_RECT)
+	cctv_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	cctv_box.visible = false
+	var cv := ColorRect.new()
+	cv.set_anchors_preset(Control.PRESET_FULL_RECT)
+	cv.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var csh := Shader.new()
+	csh.code = NewsClip.VHS_SHADER
+	var cmat := ShaderMaterial.new()
+	cmat.shader = csh
+	cv.material = cmat
+	cctv_box.add_child(cv)
+	cctv_label = Label.new()
+	cctv_label.position = Vector2(40, 90)
+	cctv_label.add_theme_font_size_override("font_size", 30)
+	cctv_label.add_theme_color_override("font_color", Color(0.9, 1.0, 0.9))
+	cctv_label.add_theme_constant_override("outline_size", 6)
+	cctv_label.add_theme_color_override("font_outline_color", Color.BLACK)
+	cctv_box.add_child(cctv_label)
+	root.add_child(cctv_box)
+	bar_top = ColorRect.new()
+	bar_top.color = Color.BLACK
+	bar_top.anchor_right = 1.0
+	bar_top.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	root.add_child(bar_top)
+	bar_bot = ColorRect.new()
+	bar_bot.color = Color.BLACK
+	bar_bot.anchor_right = 1.0
+	bar_bot.anchor_top = 1.0
+	bar_bot.anchor_bottom = 1.0
+	bar_bot.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	root.add_child(bar_bot)
 
 	_mk(root, 0.5, -24, 28).text = "·"
 	prompt = _mk(root, 0.8, 0, 22)
@@ -184,6 +232,8 @@ func _ready() -> void:
 		_sub_t = 2.5)
 	Game.confrontation.connect(_on_confront)
 	Game.note_opened.connect(_on_note)
+	Game.item_added.connect(func(id: String): Game.subtitle.emit("حصلتَ على: " + Game.item_name(id)))
+	Game.puzzle_requested.connect(_on_puzzle)
 	Game.fade_requested.connect(_on_dead)
 	Game.game_over.connect(func(): _show_end("انتهت اللعبة… قتلك الظل", true))
 
@@ -244,6 +294,8 @@ func _process(delta: float) -> void:
 		prompt.text = it.get_prompt()
 	elif Game.near_note >= 0:
 		prompt.text = "[E] اقرأ الوثيقة"
+	elif Game.near_prompt != "":
+		prompt.text = Game.near_prompt
 	elif lp.in_hide_zone != null:
 		if lp.posture == Player.Posture.CROUCH or lp.posture == Player.Posture.CRAWL:
 			prompt.text = "[E] اختبئ"
@@ -278,6 +330,9 @@ func _send_chat() -> void:
 func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed("talk") and not chat_edit.has_focus():
 		_toggle_chat()
+		get_viewport().set_input_as_handled()
+	elif event.is_action_pressed("inventory") and not chat_edit.has_focus():
+		_open_inventory()
 		get_viewport().set_input_as_handled()
 
 
@@ -333,3 +388,88 @@ func title_card(text: String, subtitle_text: String) -> void:
 	tw.set_parallel(false)
 	tw.tween_callback(l.queue_free)
 	tw.tween_callback(cover.queue_free)
+
+
+func _lock_ui(on: bool) -> void:
+	puzzle_open = on
+	Game.typing = on
+	if on:
+		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	elif not Game.touch_mode:
+		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+
+
+func _on_puzzle(kind: String, station) -> void:
+	if puzzle_open:
+		return
+	if kind == "phone":
+		Util.play(self, "click")
+		Game.fire("start_final", [Game.my_id()])
+		return
+	_lock_ui(true)
+	if kind == "door":
+		Game.fire("freeze_monster", [10.0])
+		var q := DoorQTE.new()
+		q.finished.connect(func(ok: bool):
+			if is_instance_valid(q):
+				q.queue_free()
+			_lock_ui(false)
+			if ok:
+				Game.fire("complete_step", [Game.Step.EXIT])
+			else:
+				Game.fire("door_failed", [Game.my_id()]))
+		add_child(q)
+		return
+	if kind == "tv":
+		Game.fire("make_noise", [station.global_position, 0.5])      # the TV is loud
+		var c := NewsClip.new()
+		if Game.has_tape:
+			c.lines = Game.NEWS_LINES
+			c.ticker_text = Game.NEWS_TICKER
+			c.whisper_name = Game.player_name
+		else:
+			c.lines = ["…لا توجد إشارة. ربما يلزم شريط."]
+			c.ticker_text = "   لا توجد إشارة   "
+		c.finished.connect(func(): _lock_ui(false))
+		add_child(c)
+		return
+	var p := PuzzleUI.new()
+	p.kind = kind
+	p.station = station
+	p.solved.connect(func():
+		if is_instance_valid(p):
+			p.queue_free()
+		_lock_ui(false)
+		if kind == "safe":
+			Game.add_item("key_b13")
+		if station.step_index >= 0:
+			Game.fire("complete_step", [station.step_index]))
+	p.closed.connect(func():
+		if is_instance_valid(p):
+			p.queue_free()
+		_lock_ui(false))
+	add_child(p)
+
+
+## Cinematic letterbox bars (in-engine cut-scenes).
+func bars(on: bool) -> void:
+	create_tween().tween_property(bar_top, "anchor_bottom", 0.12 if on else 0.0, 0.8)
+	create_tween().tween_property(bar_bot, "anchor_top", 0.88 if on else 1.0, 0.8)
+
+
+## Security-camera / VHS look for a shot.
+func cctv(on: bool, text := "") -> void:
+	cctv_box.visible = on
+	cctv_label.text = text
+
+
+func _open_inventory() -> void:
+	if puzzle_open:
+		return
+	_lock_ui(true)
+	var ins := ItemInspect.new()
+	ins.closed.connect(func():
+		if is_instance_valid(ins):
+			ins.queue_free()
+		_lock_ui(false))
+	add_child(ins)

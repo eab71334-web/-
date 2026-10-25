@@ -126,7 +126,9 @@ func _build_ui() -> void:
 	name_edit.placeholder_text = "اسمك (سيناديك به الظل)"
 	name_edit.text = Game.player_name if Game.player_name != "Player" else ""
 	col.add_child(name_edit)
-	_button(col, "ابدأ القصة", _on_story)
+	if Game.has_saved_run():
+		_button(col, "متابعة", _on_continue)
+	_button(col, "ابدأ القصة (جديدة)", _on_story)
 	_button(col, "لعب سريع (بدون مقدمة)", _on_solo)
 	_button(col, "اللعب الجماعي LAN", func(): _toggle(panel_lan))
 	_button(col, "الإعدادات", func(): _toggle(panel_set))
@@ -225,13 +227,21 @@ func _apply() -> void:
 	Game.save_settings()
 
 
+func _on_continue() -> void:
+	_apply()
+	Game.load_run()
+	Game.start_game(true)
+
+
 func _on_story() -> void:
 	_apply()
+	Game.new_run()
 	Game.start_story()
 
 
 func _on_solo() -> void:
 	_apply()
+	Game.new_run()
 	Game.start_game(true)
 
 

@@ -215,7 +215,7 @@ func _apply(t: String, m) -> bool:
 					return true
 			return false
 		"camp_objective":
-			var o: Vector3 = Game.OBJ_POS[mini(Game.step, 2)]
+			var o: Vector3 = Game.OBJ_POS[mini(Game.step, Game.OBJ_POS.size() - 1)]
 			m.dest = o + Vector3(randf_range(-4.0, 4.0), 0.0, randf_range(-4.0, 4.0))
 			m.hold_t = 10.0
 			m._set_state(0)

@@ -38,6 +38,20 @@ func _build_base() -> void:
 	sub.add_theme_font_size_override("font_size", 22)
 	sub.add_theme_color_override("font_color", Color(0.75, 0.1, 0.1))
 	add_child(sub)
+	var top := ColorRect.new()
+	top.color = Color.BLACK
+	top.anchor_right = 1.0
+	top.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(top)
+	var bot := ColorRect.new()
+	bot.color = Color.BLACK
+	bot.anchor_right = 1.0
+	bot.anchor_top = 1.0
+	bot.anchor_bottom = 1.0
+	bot.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(bot)
+	create_tween().tween_property(top, "anchor_bottom", 0.11, 1.6)      # cinema letterbox closes in
+	create_tween().tween_property(bot, "anchor_top", 0.89, 1.6)
 	flash = ColorRect.new()
 	flash.color = Color(1, 1, 1, 0)
 	flash.set_anchors_preset(Control.PRESET_FULL_RECT)

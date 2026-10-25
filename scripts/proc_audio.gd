@@ -16,6 +16,11 @@ static func get_sound(sound_name: String) -> AudioStreamWAV:
 			"creak": _cache[sound_name] = _creak()
 			"slam": _cache[sound_name] = _slam()
 			"static": _cache[sound_name] = _static()
+			"beep": _cache[sound_name] = _beep()
+			"alarm": _cache[sound_name] = _alarm()
+			"hiss": _cache[sound_name] = _hiss()
+			"buzz": _cache[sound_name] = _buzz()
+			"spark": _cache[sound_name] = _spark()
 			_: _cache[sound_name] = _sting()
 	return _cache[sound_name]
 
@@ -164,3 +169,60 @@ static func _static() -> AudioStreamWAV:
 		var t := float(i) / rate
 		s[i] = randf_range(-1.0, 1.0) * 0.35 * (0.6 + 0.4 * sin(TAU * 30.0 * t))
 	return _wav(s, rate, false)
+
+
+static func _beep() -> AudioStreamWAV:
+	var rate := 22050
+	var n := int(rate * 0.12)
+	var s := PackedFloat32Array()
+	s.resize(n)
+	for i in n:
+		var t := float(i) / rate
+		s[i] = sin(TAU * 1200.0 * t) * 0.5 * clampf((0.12 - t) * 20.0, 0.0, 1.0)
+	return _wav(s, rate, false)
+
+
+static func _buzz() -> AudioStreamWAV:
+	var rate := 22050
+	var n := int(rate * 0.4)
+	var s := PackedFloat32Array()
+	s.resize(n)
+	for i in n:
+		var t := float(i) / rate
+		s[i] = (fmod(t * 110.0, 1.0) * 2.0 - 1.0) * 0.4 * clampf((0.4 - t) * 8.0, 0.0, 1.0)
+	return _wav(s, rate, false)
+
+
+static func _spark() -> AudioStreamWAV:
+	var rate := 22050
+	var n := int(rate * 0.5)
+	var s := PackedFloat32Array()
+	s.resize(n)
+	for i in n:
+		var t := float(i) / rate
+		s[i] = randf_range(-1.0, 1.0) * exp(-t * 14.0) * (1.0 if randf() < 0.35 else 0.15)
+	return _wav(s, rate, false)
+
+
+static func _alarm() -> AudioStreamWAV:
+	var rate := 11025
+	var n := rate * 2
+	var s := PackedFloat32Array()
+	s.resize(n)
+	var ph := 0.0
+	for i in n:
+		var t := float(i) / rate
+		ph += TAU * (700.0 + 200.0 * sin(TAU * 1.0 * t)) / rate
+		s[i] = (1.0 if sin(ph) > 0.0 else -1.0) * 0.22
+	return _wav(s, rate, true)
+
+
+static func _hiss() -> AudioStreamWAV:
+	var rate := 11025
+	var s := PackedFloat32Array()
+	s.resize(rate)
+	var lp := 0.0
+	for i in rate:
+		lp = lp * 0.4 + randf_range(-1.0, 1.0) * 0.6
+		s[i] = lp * 0.5
+	return _wav(s, rate, true)

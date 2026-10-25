@@ -124,3 +124,21 @@ static func barrel(parent: Node, pos: Vector3) -> StaticBody3D:
 	b.add_child(cs)
 	parent.add_child(b)
 	return b
+
+
+static func play(parent: Node, sound_name: String, db := 0.0) -> void:
+	var p := AudioStreamPlayer.new()
+	p.stream = ProcAudio.get_sound(sound_name)
+	p.volume_db = db
+	parent.add_child(p)
+	p.play()
+	p.finished.connect(p.queue_free)
+
+
+static func speak(text: String, pitch := 0.5, rate := 0.8) -> void:
+	var v := DisplayServer.tts_get_voices_for_language("ar")
+	if v.is_empty():
+		v = DisplayServer.tts_get_voices_for_language("en")
+	if v.is_empty():
+		return
+	DisplayServer.tts_speak(text, v[0], 80, pitch, rate, 0, true)
