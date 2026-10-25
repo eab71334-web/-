@@ -102,3 +102,22 @@ Blackout + sudden appearance, footsteps behind you, sudden silence then a thud, 
 ## Story: "ملف B-13" (original fiction — written like a case file, NOT real events)
 Menu → **ابدأ القصة**: 3:07 AM phone call → abandoned hospital → lock-picking mini-game on door B-13 → a voice says your name → the Sequence begins. Five documents hide the truth (Dr. Salem's Sequence, patient 13, the cover-up…). Escape normally = hint ending; find all 5 documents = **true ending** (your own phone rings with your name and your voice repeating the opening call: the night loops). The end card ("ملف القضية") lists what the Shadow learned about you — made to be screenshotted/recorded for TikTok/YouTube.
 Cinematics: `cine_base.gd`, `intro.gd`, `ending.gd`, `lockpick.gd`. Menu has a live 3D monster behind the UI, film-grain/vignette shader, themed UI (`ui_theme.gd`).
+
+## Documentary-style story & puzzles (fiction told like real records)
+Sources inside the game: **TV news broadcast on a VHS tape** (CRT/VHS shader, "عاجل" lower-third, ticker), **police report**, hospital security report, administration order, the patient's torn note — and the intro opens with archival TV footage + letterbox cinema bars.
+Puzzle chain: read Dr. Salem's document (fuse order red→blue→green) → **fuse-box puzzle** powers the generator → find the **VHS tape** (exit room) → watch it on the **TV** (east hall) to learn *patient 13 / room 07* → **keypad 1307** in the control room → wheel → escape. Wrong fuse / wrong code = noise that calls the monster; the TV is loud too.
+
+## New escape (replaces the hydraulic wheel)
+1. After the keypad, the **phone in room B-13** (west of the exit room) starts ringing — the whole basement hears it, so the Shadow comes.
+2. **Answer it → every light dies.** A voice that sounds like you says: don't move, don't breathe, seven seconds. The Shadow appears behind you in the dark and circles closer while whispering your name. Moving or making a sound (microphone) = death. He ends face to face, then lets you go.
+3. **Alarm + red strobe: run** to the main door (he chases you).
+4. **Door-closing struggle:** his arm is in the doorway — tap/press E/Space fast to slam it shut (lose = he drags you in).
+Note: the finale is fully tuned for solo and for the host in LAN games.
+
+## v2 — one continuous series (no separate levels)
+- **Continuous run**: chapters flow inside one world; progress (step, items, opened doors, position) is auto-saved; **متابعة** resumes; dying restarts from the last checkpoint.
+- **New wings**: Archive (south, behind a locked gate) + Morgue + sealed room B-13. Opened doors stay open (shortcuts) and the monster's navmesh is re-baked so he can use them.
+- **Puzzles**: keys & locked doors (RE-style), invisible writing under the flashlight, radio frequency tuning, dial safe (12-03-87), fuse order, VHS + keypad, phone finale, door QTE.
+- **Hands & items**: right hand reaches when you interact; left hand lifts each found item and turns it; inventory screen (I) with a 3D inspect view.
+- **Cinematics in-engine**: CCTV shot (power returns), morgue drawer 13, chapter title cards, letterbox bars.
+- Story: `docs/STORY_EPISODE1.md`. Research notes: `docs/DESIGN_NOTES.md`.
