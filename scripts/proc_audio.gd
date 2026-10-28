@@ -19,6 +19,8 @@ static func get_sound(sound_name: String) -> AudioStreamWAV:
 			"beep": _cache[sound_name] = _beep()
 			"alarm": _cache[sound_name] = _alarm()
 			"hiss": _cache[sound_name] = _hiss()
+			"musicbox": _cache[sound_name] = _musicbox()
+			"hum": _cache[sound_name] = _hum()
 			"buzz": _cache[sound_name] = _buzz()
 			"spark": _cache[sound_name] = _spark()
 			_: _cache[sound_name] = _sting()
@@ -226,3 +228,40 @@ static func _hiss() -> AudioStreamWAV:
 		lp = lp * 0.4 + randf_range(-1.0, 1.0) * 0.6
 		s[i] = lp * 0.5
 	return _wav(s, rate, true)
+
+
+## A slow music-box lullaby (original melody) that loops.
+static func _musicbox() -> AudioStreamWAV:
+	var rate := 11025
+	var notes := [523.25, 659.25, 783.99, 659.25, 587.33, 698.46, 880.0, 698.46, 523.25, 587.33, 659.25, 523.25]
+	var dur := 0.5
+	var n := int(rate * dur * notes.size())
+	var s := PackedFloat32Array()
+	s.resize(n)
+	for k in notes.size():
+		var f: float = notes[k]
+		var start := int(k * dur * rate)
+		for i in int(rate * dur * 1.6):
+			var idx := start + i
+			if idx >= n:
+				break
+			var t := float(i) / rate
+			var env := exp(-t * 4.5)
+			s[idx] += (sin(TAU * f * t) + 0.35 * sin(TAU * f * 2.0 * t) + 0.12 * sin(TAU * f * 3.0 * t)) * env * 0.3
+	return _wav(s, rate, true)
+
+
+## Eerie female humming from a faraway room.
+static func _hum() -> AudioStreamWAV:
+	var rate := 11025
+	var n := rate * 5
+	var s := PackedFloat32Array()
+	s.resize(n)
+	var ph := 0.0
+	for i in n:
+		var t := float(i) / rate
+		var f := 220.0 + 25.0 * sin(TAU * 0.25 * t) + 3.0 * sin(TAU * 5.5 * t)
+		ph += TAU * f / rate
+		var env := clampf(t * 1.5, 0.0, 1.0) * clampf((5.0 - t) * 1.5, 0.0, 1.0)
+		s[i] = (sin(ph) + 0.5 * sin(2.0 * ph) + 0.25 * sin(3.0 * ph)) * 0.22 * env + randf_range(-1.0, 1.0) * 0.01 * env
+	return _wav(s, rate, false)

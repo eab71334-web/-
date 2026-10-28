@@ -13,7 +13,7 @@ var games_box: VBoxContainer
 var panel_lan: PanelContainer
 var panel_set: PanelContainer
 var title: Label
-var rig: MonsterRig
+var rig
 var fx_mat: ShaderMaterial
 var _t := 0.0
 
@@ -65,10 +65,11 @@ func _build_scene3d() -> void:
 	sv.add_child(we)
 	Util.mesh(sv, Util.bmesh(Vector3(30, 0.2, 30)), Util.grunge(Color(0.1, 0.1, 0.11)), Vector3(0, -0.1, 0))
 	Util.mesh(sv, Util.bmesh(Vector3(30, 8, 0.3)), Util.grunge(Color(0.13, 0.12, 0.12)), Vector3(0, 4, -3.2))
-	rig = MonsterRig.new()
+	rig = GhostRig.new()
 	rig.position = Vector3(1.3, 0, 0)
 	rig.rotation.y = PI
 	sv.add_child(rig)
+	rig.set_alpha(0.55)
 	var cam := Camera3D.new()
 	cam.position = Vector3(0, 1.5, 5.4)
 	cam.fov = 55.0
@@ -113,14 +114,14 @@ func _build_ui() -> void:
 	col.add_theme_constant_override("separation", 12)
 	add_child(col)
 	title = Label.new()
-	title.text = "التسلسل"
+	title.text = "بيت الصفصاف"
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	title.add_theme_font_size_override("font_size", 76)
 	title.add_theme_color_override("font_color", Color(0.9, 0.9, 0.88))
 	title.add_theme_constant_override("outline_size", 12)
 	title.add_theme_color_override("font_outline_color", Color(0.4, 0.0, 0.0))
 	col.add_child(title)
-	var sub := _label(col, "الظل القاتل  —  ملف B-13", 26)
+	var sub := _label(col, "تحقيق في الظواهر الخفيّة  —  ١٩٧٦", 26)
 	sub.add_theme_color_override("font_color", Color(0.8, 0.1, 0.1))
 	name_edit = LineEdit.new()
 	name_edit.placeholder_text = "اسمك (سيناديك به الظل)"
@@ -128,7 +129,7 @@ func _build_ui() -> void:
 	col.add_child(name_edit)
 	if Game.has_saved_run():
 		_button(col, "متابعة", _on_continue)
-	_button(col, "ابدأ القصة (جديدة)", _on_story)
+	_button(col, "ابدأ التحقيق (جديد)", _on_story)
 	_button(col, "لعب سريع (بدون مقدمة)", _on_solo)
 	_button(col, "اللعب الجماعي LAN", func(): _toggle(panel_lan))
 	_button(col, "الإعدادات", func(): _toggle(panel_set))

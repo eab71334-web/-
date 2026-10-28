@@ -52,6 +52,8 @@ func _layout() -> void:
 		{"a": "crouch", "t": "C", "p": Vector2(r - 230.0, _size.y - 235.0), "hold": false, "down": false},
 		{"a": "crawl", "t": "Z", "p": Vector2(r - 90.0, _size.y - 310.0), "hold": false, "down": false},
 		{"a": "flashlight", "t": "F", "p": Vector2(r - 70.0, 90.0), "hold": false, "down": false},
+		{"a": "camera", "t": "CAM", "p": Vector2(r - 370.0, _size.y - 100.0), "hold": false, "down": false},
+		{"a": "recorder", "t": "REC", "p": Vector2(r - 370.0, _size.y - 235.0), "hold": false, "down": false},
 	]
 	canvas.queue_redraw()
 
@@ -136,6 +138,8 @@ func _press(action: String, hold: bool) -> void:
 		"crouch": lp.do_crouch()
 		"crawl": lp.do_crawl()
 		"flashlight": lp.do_flashlight()
+		"camera": lp.toggle_camera()
+		"recorder": lp.do_recorder()
 
 
 func _act(action: String, pressed: bool, strength := 1.0) -> void:

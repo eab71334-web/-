@@ -42,6 +42,10 @@ var note_panel: PanelContainer
 var note_title: Label
 var note_body: Label
 var puzzle_open := false
+var battery_bar: ProgressBar
+var rec_label: Label
+var flash_rect: ColorRect
+var _obj_base := ""
 
 
 func _ready() -> void:
@@ -69,6 +73,7 @@ func _ready() -> void:
 	chat_btn.offset_right = 150
 	chat_btn.offset_bottom = 108
 	chat_btn.pressed.connect(_toggle_chat)
+	chat_btn.visible = false
 	root.add_child(chat_btn)
 	inv_btn = Button.new()
 	inv_btn.text = "الأغراض (I)"
@@ -157,6 +162,17 @@ func _ready() -> void:
 	bar_bot.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root.add_child(bar_bot)
 
+	root.add_child(Viewfinder.new())
+	rec_label = _mk(root, 0.0, 66, 26)
+	rec_label.add_theme_color_override("font_color", Color(1, 0.15, 0.15))
+	flash_rect = ColorRect.new()
+	flash_rect.color = Color(1, 1, 1, 0)
+	flash_rect.set_anchors_preset(Control.PRESET_FULL_RECT)
+	flash_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	root.add_child(flash_rect)
+	Game.photo_taken.connect(func():
+		flash_rect.color.a = 0.9
+		create_tween().tween_property(flash_rect, "color:a", 0.0, 0.35))
 	_mk(root, 0.5, -24, 28).text = "·"
 	prompt = _mk(root, 0.8, 0, 22)
 	dbg = _mk(root, 0.93, 0, 14)
@@ -184,6 +200,17 @@ func _ready() -> void:
 	noise_bar.show_percentage = false
 	noise_bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root.add_child(noise_bar)
+	battery_bar = ProgressBar.new()
+	battery_bar.anchor_top = 1.0
+	battery_bar.anchor_bottom = 1.0
+	battery_bar.offset_left = 20
+	battery_bar.offset_right = 220
+	battery_bar.offset_top = -66
+	battery_bar.offset_bottom = -48
+	battery_bar.show_percentage = false
+	battery_bar.modulate = Color(1.0, 0.85, 0.3)
+	battery_bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	root.add_child(battery_bar)
 
 	# name + health bar shown when the monster stands over your hiding spot
 	confront = PanelContainer.new()
@@ -226,7 +253,7 @@ func _ready() -> void:
 	eb.add_child(restart_btn)
 	root.add_child(end_panel)
 
-	Game.objective_changed.connect(func(t): objective.text = t)
+	Game.objective_changed.connect(func(t): _obj_base = t)
 	Game.subtitle.connect(func(t):
 		subtitle.text = t
 		_sub_t = 2.5)
@@ -275,6 +302,18 @@ func _show_end(text: String, with_button: bool) -> void:
 
 func _process(delta: float) -> void:
 	_sub_t -= delta
+	var suffix := ""
+	if Game.step == Game.Step.MEET:
+		suffix = "  (%d/3)" % mini(_prefix_count(Game.flags.keys(), "talked_"), 3)
+	elif Game.step == Game.Step.EVIDENCE:
+		suffix = "  (%d/3)" % mini(Game.evidence.size(), 3)
+	elif Game.step == Game.Step.VOICES:
+		suffix = "  (%d/2)" % mini(Game.evp.size(), 2)
+	elif Game.step == Game.Step.PAGES:
+		suffix = "  (%d/4)" % mini(_prefix_count(Game.items, "page_"), 4)
+	objective.text = _obj_base + suffix
+	battery_bar.value = Game.battery
+	rec_label.text = "● تسجيل" if Game.recording else ""
 	fx_mat.set_shader_parameter("threat", Game.threat)
 	fx_mat.set_shader_parameter("pulse", 0.5 + 0.5 * sin(Time.get_ticks_msec() / 1000.0 * (4.0 + Game.threat * 8.0)))
 	if _sub_t <= 0.0:
@@ -402,37 +441,11 @@ func _lock_ui(on: bool) -> void:
 func _on_puzzle(kind: String, station) -> void:
 	if puzzle_open:
 		return
-	if kind == "phone":
+	if kind == "ritual":
 		Util.play(self, "click")
-		Game.fire("start_final", [Game.my_id()])
+		Game.fire("start_ritual", [Game.my_id()])
 		return
 	_lock_ui(true)
-	if kind == "door":
-		Game.fire("freeze_monster", [10.0])
-		var q := DoorQTE.new()
-		q.finished.connect(func(ok: bool):
-			if is_instance_valid(q):
-				q.queue_free()
-			_lock_ui(false)
-			if ok:
-				Game.fire("complete_step", [Game.Step.EXIT])
-			else:
-				Game.fire("door_failed", [Game.my_id()]))
-		add_child(q)
-		return
-	if kind == "tv":
-		Game.fire("make_noise", [station.global_position, 0.5])      # the TV is loud
-		var c := NewsClip.new()
-		if Game.has_tape:
-			c.lines = Game.NEWS_LINES
-			c.ticker_text = Game.NEWS_TICKER
-			c.whisper_name = Game.player_name
-		else:
-			c.lines = ["…لا توجد إشارة. ربما يلزم شريط."]
-			c.ticker_text = "   لا توجد إشارة   "
-		c.finished.connect(func(): _lock_ui(false))
-		add_child(c)
-		return
 	var p := PuzzleUI.new()
 	p.kind = kind
 	p.station = station
@@ -441,7 +454,7 @@ func _on_puzzle(kind: String, station) -> void:
 			p.queue_free()
 		_lock_ui(false)
 		if kind == "safe":
-			Game.add_item("key_b13")
+			Game.add_item("key_attic")
 		if station.step_index >= 0:
 			Game.fire("complete_step", [station.step_index]))
 	p.closed.connect(func():
@@ -473,3 +486,11 @@ func _open_inventory() -> void:
 			ins.queue_free()
 		_lock_ui(false))
 	add_child(ins)
+
+
+func _prefix_count(arr, prefix: String) -> int:
+	var n := 0
+	for k in arr:
+		if str(k).begins_with(prefix):
+			n += 1
+	return n

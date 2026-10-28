@@ -38,7 +38,7 @@ func _enter_tree() -> void:
 	set_multiplayer_authority(str(name).to_int())
 	add_to_group("players")
 	collision_layer = 2
-	collision_mask = 1
+	collision_mask = 9          # world + doors
 
 
 func _ready() -> void:
@@ -101,6 +101,10 @@ func _unhandled_input(event: InputEvent) -> void:
 		do_crawl()
 	elif event.is_action_pressed("flashlight"):
 		do_flashlight()
+	elif event.is_action_pressed("camera"):
+		toggle_camera()
+	elif event.is_action_pressed("recorder"):
+		do_recorder()
 	elif event.is_action_pressed("interact"):
 		do_interact()
 	elif event.is_action_pressed("ui_cancel"):
@@ -140,6 +144,9 @@ func do_flashlight() -> void:
 
 func do_interact() -> void:
 	if locked or not alive:
+		return
+	if Game.camera_on:
+		_shutter()
 		return
 	if hidden:
 		hidden = false
@@ -249,8 +256,12 @@ func _process(delta: float) -> void:
 		elif m.state == 5:
 			tgt = maxf(tgt, 0.9)
 	Game.threat = lerpf(Game.threat, tgt, minf(delta * 2.5, 1.0))
-	cam.fov = lerpf(cam.fov, 75.0 + Game.threat * 10.0, minf(delta * 3.0, 1.0))
-	light.visible = flash_on and Time.get_ticks_msec() >= Game.blackout_until
+	cam.fov = lerpf(cam.fov, 45.0 if Game.camera_on else 75.0 + Game.threat * 10.0, minf(delta * 3.0, 1.0))
+	light.visible = flash_on and Game.battery > 0.0 and Time.get_ticks_msec() >= Game.blackout_until
+	if light.visible:
+		Game.consume(0.3 * delta)
+	if Game.camera_on:
+		Game.consume(0.45 * delta)
 	_look_delta = _look_delta.lerp(Vector2.ZERO, minf(delta * 10.0, 1.0))
 	if vm != null:
 		vm.update(delta, speed_now, _look_delta)
@@ -290,3 +301,51 @@ func _on_utterance(dur: float, peak: float) -> void:
 	if not alive or locked or not Game.use_mic:
 		return
 	Game.fire("report_speech", [str(name).to_int(), dur, peak, ""])
+
+
+# ---- investigator tools: camera (R), audio recorder (V); battery is shared with the flashlight ----
+func toggle_camera() -> void:
+	if locked or not alive:
+		return
+	if not Game.camera_on and Game.battery <= 0.0:
+		Game.subtitle.emit("البطارية فارغة…")
+		return
+	Game.camera_on = not Game.camera_on
+	Util.play(self, "click", -4.0)
+
+
+func _shutter() -> void:
+	if Game.battery < 3.0:
+		Game.subtitle.emit("البطارية لا تكفي للتصوير")
+		return
+	Game.consume(3.0)
+	Util.play(self, "click", -2.0)
+	Game.photo_taken.emit()
+	for m in get_tree().get_nodes_in_group("evidence"):
+		if m.try_capture(cam):
+			Game.add_evidence(m.id)
+			Game.subtitle.emit("التقطتَ شيئاً لا يجب أن يكون هناك…")
+
+
+func do_recorder() -> void:
+	if Game.recording or locked or not alive:
+		return
+	if Game.battery < 6.0:
+		Game.subtitle.emit("البطارية لا تكفي للتسجيل")
+		return
+	Game.consume(6.0)
+	Game.recording = true
+	Game.subtitle.emit("● جارٍ التسجيل… ٨ ثوانٍ (اثبت وصمت)")
+	Util.play(self, "hiss", -10.0)
+	get_tree().create_timer(8.0).timeout.connect(_finish_recording)
+
+
+func _finish_recording() -> void:
+	Game.recording = false
+	var z = Game.in_zone
+	if z != null and is_instance_valid(z):
+		Game.subtitle.emit("[تسجيل] " + z.voice)
+		Util.speak(z.voice, 0.35, 0.65)
+		Game.add_evp(z.evp_id)
+	else:
+		Game.subtitle.emit("[تسجيل] تشويش فقط… جرّب مكاناً آخر.")

@@ -36,6 +36,9 @@ var name_cd := 15.0
 var brain: AIBrain
 var mind: ShadowMind
 var hold_t := 0.0
+var _flash_t := 0.0
+var _fade_t := 0.0
+var _fade_total := 1.0
 var script_mode := false     # true while a scripted scene (finale / door) drives him
 var style := "walk"
 var style_speed := 1.0
@@ -45,7 +48,7 @@ var talk_outcome := "toy"
 var ai_t := 3.0
 var seen_post := {}
 const POSTURES := ["standing", "running", "crouching", "crawling", "hiding"]
-var rig: MonsterRig
+var rig
 var breath: AudioStreamPlayer3D
 var step_snd: AudioStreamPlayer3D
 var _last_pos := Vector3.ZERO
@@ -62,7 +65,7 @@ func _ready() -> void:
 	cs.shape = cap
 	cs.position.y = 1.1
 	add_child(cs)
-	rig = MonsterRig.new()
+	rig = GhostRig.new()
 	add_child(rig)
 	eyes = Node3D.new()
 	eyes.position = Vector3(0, 2.0, -0.3)
@@ -213,7 +216,7 @@ func _move_to(to: Vector3, speed: float, delta: float) -> bool:
 		velocity = Vector3.ZERO
 		return true
 	var dir := agent.get_next_path_position() - global_position
-	dir.y = 0.0
+	dir.y = clampf(dir.y, -0.8, 0.8)      # follow ramps (stairs) up and down
 	if dir.length() > 0.01:
 		dir = dir.normalized()
 		_face_point(global_position + dir, delta, 6.0)
@@ -431,15 +434,7 @@ func _on_noise(pos: Vector3, loudness: float) -> void:
 
 
 func _on_objective(_t: String) -> void:
-	if Game.step == Game.Step.EXIT:       # wheel finished: he charges the nearest player
-		var best: Player = null
-		for p in _alive_players():
-			if best == null or global_position.distance_to(p.global_position) < global_position.distance_to(best.global_position):
-				best = p
-		if best != null:
-			target = best
-			last_known = best.global_position
-			_set_state(State.CHASE)
+	pass
 
 
 func _nearest_zone(pos: Vector3) -> HideZone:
@@ -602,6 +597,13 @@ func _process(delta: float) -> void:
 	_speed_s = lerpf(_speed_s, minf(flat.length() / maxf(delta, 0.001), 7.0), minf(delta * 8.0, 1.0))
 	rig.style = style
 	rig.animate(delta, _speed_s, state, Time.get_ticks_msec() / 1000.0)
+	rig.set_alpha(_vis_alpha())
+	if _flash_t > 0.0:
+		_flash_t -= delta
+		if _flash_t <= 0.0 and script_mode:
+			global_position = Vector3(0, 40, 0)
+	if _fade_t > 0.0:
+		_fade_t -= delta
 	breath.pitch_scale = 1.4 if state == State.CHASE else 0.9
 
 
@@ -821,3 +823,38 @@ func _on_door_failed(pid: int) -> void:
 	if p != null:
 		script_mode = false
 		_start_kill(p, "reach_through")
+
+
+# ------------------------------------------------------------------ she is mostly NOT seen
+func flash(pos: Vector3, secs: float) -> void:
+	global_position = pos
+	var lp = Game.local_player
+	if lp != null and is_instance_valid(lp):
+		look_at(Vector3(lp.global_position.x, pos.y, lp.global_position.z), Vector3.UP)
+	_flash_t = secs
+
+
+func fade_out(secs: float) -> void:
+	_fade_total = secs
+	_fade_t = secs
+
+
+func _vis_alpha() -> float:
+	var a := 0.0
+	var lp = Game.local_player
+	var d := 99.0
+	if lp != null and is_instance_valid(lp):
+		d = global_position.distance_to(lp.global_position)
+	if Game.reveal_level >= 4:
+		a = 1.0
+	elif Game.camera_on and d < 14.0:
+		a = 0.75                                  # only the lens can see her
+	elif _flash_t > 0.0:
+		a = 0.55                                  # a shadow at the end of the hall
+	elif Game.reveal_level >= 3 and d < 9.0:
+		a = 0.15 + 0.12 * sin(Time.get_ticks_msec() / 90.0)
+	elif state == State.KILLING:
+		a = 1.0
+	if _fade_t > 0.0:
+		a *= _fade_t / _fade_total
+	return a
