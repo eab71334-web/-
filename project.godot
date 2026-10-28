@@ -2,8 +2,8 @@
 config_version=5
 
 [application]
-config/name="Sequence: Killer Shadow"
-config/description="First-person stealth horror. Solo or 2-4 player co-op."
+config/name="بيت الصفصاف"
+config/description="First-person paranormal investigation horror in an isolated farmhouse."
 run/main_scene="res://scenes/main_menu.tscn"
 config/features=PackedStringArray("4.3", "Forward Plus")
 config/icon="res://icon.svg"
