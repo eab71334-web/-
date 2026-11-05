@@ -48,7 +48,7 @@ func _run() -> void:
 	box.global_position = Vector3(0, 9.0, -6)
 	box.play()
 	# she appears at the far side of the attic
-	var best := p.global_position
+	var best: Vector3 = p.global_position
 	for dir in [Vector3(1, 0, 0), Vector3(-1, 0, 0), Vector3(0, 0, 1), Vector3(0, 0, -1)]:
 		var c: Vector3 = p.global_position + dir * 8.0
 		c.x = clampf(c.x, -11.0, 11.0)

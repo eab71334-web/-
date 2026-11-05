@@ -350,10 +350,10 @@ func _begin_search_hide() -> void:
 	for z in hide_zones:
 		if now - z.last_checked < 15000:
 			continue
-		var d := z.global_position.distance_to(noise_pos)
+		var d: float = z.global_position.distance_to(noise_pos)
 		if d > 10.0:
 			continue
-		var w := (10.0 - d) + z.score * 3.0
+		var w: float = (10.0 - d) + float(z.score) * 3.0
 		if w > best_w:
 			best_w = w
 			best = z

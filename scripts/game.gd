@@ -61,7 +61,7 @@ const RADIO_MSG := "هنا الدكتور سالم… سجّلتُ هذه الر
 var player_name := "Player"
 var use_mic := true
 var solo := true
-var step: int = Step.GENERATOR
+var step: int = Step.MEET
 var wheel_time := 8.0
 var dead_ids: Array = []
 var finished := false
@@ -423,7 +423,7 @@ func load_run() -> bool:
 
 
 func clear_run() -> void:
-	step = Step.GENERATOR
+	step = Step.MEET
 	items = []
 	flags = {}
 	evidence = []

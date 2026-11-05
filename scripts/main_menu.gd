@@ -1,5 +1,5 @@
 extends Control
-## Cinematic menu: the monster stands in a dark room behind the UI (live 3D), film grain / vignette overlay.
+## Cinematic menu: flat 2D silhouette + film-grain shader (no 3D viewport: safer on iOS).
 
 var name_edit: LineEdit
 var ip_edit: LineEdit
@@ -13,7 +13,7 @@ var games_box: VBoxContainer
 var panel_lan: PanelContainer
 var panel_set: PanelContainer
 var title: Label
-var rig
+var bg: Control
 var fx_mat: ShaderMaterial
 var _t := 0.0
 
@@ -21,7 +21,7 @@ var _t := 0.0
 func _ready() -> void:
 	theme = UITheme.make()
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
-	_build_scene3d()
+	_build_bg()
 	_build_fx()
 	_build_ui()
 	var drone := AudioStreamPlayer.new()
@@ -40,55 +40,32 @@ func _exit_tree() -> void:
 	Net.stop_listen()
 
 
-# ------------------------------------------------------------------ background: live 3D monster
-func _build_scene3d() -> void:
-	var svc := SubViewportContainer.new()
-	svc.set_anchors_preset(Control.PRESET_FULL_RECT)
-	svc.stretch = true
-	svc.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(svc)
-	var sv := SubViewport.new()
-	sv.own_world_3d = true
-	svc.add_child(sv)
-	var env := Environment.new()
-	env.background_mode = Environment.BG_COLOR
-	env.background_color = Color.BLACK
-	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-	env.ambient_light_color = Color(0.08, 0.07, 0.09)
-	env.fog_enabled = true
-	env.fog_light_color = Color(0.03, 0.02, 0.03)
-	env.fog_density = 0.07
-	env.glow_enabled = true
-	env.tonemap_mode = Environment.TONE_MAPPER_FILMIC
-	var we := WorldEnvironment.new()
-	we.environment = env
-	sv.add_child(we)
-	Util.mesh(sv, Util.bmesh(Vector3(30, 0.2, 30)), Util.grunge(Color(0.1, 0.1, 0.11)), Vector3(0, -0.1, 0))
-	Util.mesh(sv, Util.bmesh(Vector3(30, 8, 0.3)), Util.grunge(Color(0.13, 0.12, 0.12)), Vector3(0, 4, -3.2))
-	rig = GhostRig.new()
-	rig.position = Vector3(1.3, 0, 0)
-	rig.rotation.y = PI
-	sv.add_child(rig)
-	rig.set_alpha(0.55)
-	var cam := Camera3D.new()
-	cam.position = Vector3(0, 1.5, 5.4)
-	cam.fov = 55.0
-	sv.add_child(cam)
-	cam.look_at(Vector3(-0.9, 1.6, 0))
-	var red := OmniLight3D.new()
-	red.light_color = Color(1, 0.12, 0.08)
-	red.light_energy = 1.6
-	red.omni_range = 9.0
-	red.position = Vector3(1.3, 2.4, -1.8)
-	sv.add_child(red)
-	var cold := SpotLight3D.new()
-	cold.light_color = Color(0.7, 0.8, 1.0)
-	cold.light_energy = 3.0
-	cold.spot_range = 16.0
-	cold.spot_angle = 30.0
-	cold.position = Vector3(-2.5, 3.5, 4.0)
-	sv.add_child(cold)
-	cold.look_at(Vector3(1.3, 1.6, 0))
+# ------------------------------------------------------------------ background (2D)
+func _build_bg() -> void:
+	bg = Control.new()
+	bg.set_anchors_preset(Control.PRESET_FULL_RECT)
+	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	bg.draw.connect(_draw_bg)
+	add_child(bg)
+
+
+## A flat 2D silhouette of the woman in the gown (safe on every GPU / driver).
+func _draw_bg() -> void:
+	var s := bg.size
+	bg.draw_rect(Rect2(Vector2.ZERO, s), Color(0.02, 0.0, 0.0))
+	bg.draw_rect(Rect2(0.0, s.y * 0.72, s.x, s.y * 0.28), Color(0.05, 0.03, 0.03))
+	var cx := s.x * 0.72
+	var base := s.y * 0.9
+	var h := s.y * 0.62
+	var pulse := 0.5 + 0.5 * sin(_t * 1.6)
+	bg.draw_circle(Vector2(cx, base - h * 0.55), h * 0.55, Color(0.25, 0.0, 0.0, 0.1 + 0.06 * pulse))
+	bg.draw_colored_polygon(PackedVector2Array([
+		Vector2(cx - h * 0.22, base), Vector2(cx - h * 0.06, base - h * 0.72),
+		Vector2(cx + h * 0.06, base - h * 0.72), Vector2(cx + h * 0.22, base)]), Color(0.5, 0.5, 0.54, 0.35))
+	bg.draw_rect(Rect2(cx - h * 0.075, base - h * 0.95, h * 0.15, h * 0.42), Color(0.01, 0.01, 0.02, 0.9))
+	bg.draw_circle(Vector2(cx, base - h * 0.85), h * 0.065, Color(0.6, 0.62, 0.65, 0.5))
+	for sx in [-1.0, 1.0]:
+		bg.draw_circle(Vector2(cx + sx * h * 0.025, base - h * 0.86), h * 0.01, Color(0.0, 0.0, 0.0, 0.9))
 
 
 func _build_fx() -> void:
@@ -205,8 +182,7 @@ func _toggle(p: PanelContainer) -> void:
 
 func _process(delta: float) -> void:
 	_t += delta
-	rig.animate(delta, 0.0, 3, Time.get_ticks_msec() / 1000.0)
-	rig.rotation.y = PI + sin(_t * 0.3) * 0.18
+	bg.queue_redraw()
 	fx_mat.set_shader_parameter("pulse", 0.5 + 0.5 * sin(_t * 2.2))
 	if randf() < 0.012:
 		title.modulate = Color(1.0, randf_range(0.5, 1.0), randf_range(0.5, 1.0), 1.0)
